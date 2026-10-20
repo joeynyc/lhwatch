@@ -1,0 +1,41 @@
+name: Release
+
+# Push a version tag (git tag v0.2.0 && git push origin v0.2.0) to test,
+# build, and publish archives for every supported platform.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - run: make vet test
+      - name: Build archives and checksums
+        run: make release VERSION="$GITHUB_REF_NAME"
+      - name: Check the packaged binary reports the tag
+        run: |
+          name="lhwatch_${GITHUB_REF_NAME}_linux_amd64"
+          tar -xzf "dist/release/$name.tar.gz" -C "$RUNNER_TEMP"
+          reported=$("$RUNNER_TEMP/$name/lhwatch" --version)
+          test "$reported" = "lhwatch $GITHUB_REF_NAME" || { echo "got: $reported"; exit 1; }
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="docs/releases/$GITHUB_REF_NAME.md"
+          if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --generate-notes; fi
+          case "$GITHUB_REF_NAME" in *-*) set -- "$@" --prerelease ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/release/*.tar.gz dist/release/SHA256SUMS \
+            --title "lhwatch $GITHUB_REF_NAME" --verify-tag "$@"

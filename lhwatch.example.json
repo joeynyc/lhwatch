@@ -1,0 +1,8 @@
+{
+  "refresh_seconds": 3,
+  "timeout_seconds": 8,
+  "hosts": [
+    { "name": "local" },
+    { "name": "devbox", "ssh": "you@devbox" }
+  ]
+}

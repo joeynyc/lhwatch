@@ -1,0 +1,58 @@
+name: Bug report
+description: Report something that does not work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For security issues, do not use this form. See SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: lhwatch version
+      description: Output of `lhwatch --version`.
+    validations:
+      required: true
+  - type: input
+    id: dashboard-os
+    attributes:
+      label: Dashboard machine OS
+      description: The machine running the dashboard, for example macOS 15 on arm64 or Ubuntu 24.04 on amd64.
+    validations:
+      required: true
+  - type: textarea
+    id: hosts
+    attributes:
+      label: Monitored hosts
+      description: OS, architecture, and `python3 --version` for each host involved. Say whether it is local or reached over SSH.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `lhwatch --host ...`
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include any error text or warnings shown.
+    validations:
+      required: true
+  - type: textarea
+    id: json
+    attributes:
+      label: Snapshot (optional)
+      description: |
+        Relevant output of `lhwatch --json`. It can contain hostnames, usernames, IP addresses, paths, and process command lines. Redact anything private before pasting.
+      render: json

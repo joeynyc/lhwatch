@@ -1,0 +1,78 @@
+name: CI
+
+# Branches get CI through a pull request, so a PR push never runs twice;
+# Actions > CI > Run workflow tests any branch on demand.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch supersedes an older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [linux, macos]
+    runs-on: ${{ matrix.os == 'linux' && 'ubuntu-latest' || 'macos-latest' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      # The go.mod directive is the oldest supported toolchain.
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: Formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
+      - run: make vet
+      # Go race tests plus the collector and script Python suites.
+      - run: make test
+      - name: Cross-compile release targets
+        run: make cross
+      # GitHub's macOS image has no tmux, so install it for the smoke test.
+      - name: Install tmux
+        if: matrix.os == 'macos'
+        run: command -v tmux || brew install tmux
+      # Drives the real TUI in tmux against disposable local listeners; it
+      # signals only its own fixtures.
+      - name: Local TUI smoke test
+        if: matrix.os == 'macos'
+        run: make build && python3 scripts/smoke.py
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      # Vulnerability results follow the toolchain, so check the current one.
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: stable
+      # Tool versions are pinned; bump them deliberately.
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  # The collector runs on monitored hosts with whatever Python they have.
+  collector-python:
+    name: Collector (Python ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.14"]
+    runs-on: ubuntu-latest
+    container: python:${{ matrix.python }}-slim
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - run: python3 -m unittest discover -s internal/collector -p 'test_*.py' -v
+
