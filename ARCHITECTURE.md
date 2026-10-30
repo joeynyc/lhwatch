@@ -54,7 +54,7 @@ The UI groups endpoints for display, but a stop always targets one exact endpoin
 | Shared scan connection (`ControlMaster=auto`) | Dashboard scans and stops | `Collector.Close` on exit; `ControlPersist=60` if lhwatch is killed |
 | Tunnel connection (`ssh -N -M`, `ClearAllForwardings=yes`) | Browser forwards added with `-O forward` | `Tunnels.Close` on exit, or when its last forward closes |
 
-Control sockets live in `$XDG_RUNTIME_DIR/lhwatch-UID` or `/tmp/lhwatch-UID`. If that directory is shared, owned by someone else, or a symlink, connection sharing is disabled, because a planted socket could relay sessions. Socket names hash destination, port, and identity file, so different credentials never share a connection. All connections use `BatchMode=yes` and `StrictHostKeyChecking=yes` and never modify SSH configuration.
+Control sockets live in `$XDG_RUNTIME_DIR/lhwatch-UID` or `/tmp/lhwatch-UID`. If that directory is shared, owned by someone else, or a symlink, or its parent is writable by others without the sticky bit, connection sharing is disabled, because a planted socket could relay sessions. Scan socket names hash destination, port, and identity file, so different credentials never share a connection. Tunnel sockets get a random name per connection (`t` plus 16 hex digits), so separate lhwatch instances never take over each other's tunnels; on startup, tunnel sockets that refuse connections are removed as stale. All connections use `BatchMode=yes` and `StrictHostKeyChecking=yes` and never modify SSH configuration.
 
 ## Invariants worth preserving
 

@@ -36,6 +36,15 @@ func privateControlDir(base string) (string, error) {
 	if !plainPath.MatchString(dir) || len(dir) > maxControlDir {
 		return "", fmt.Errorf("unsuitable SSH control directory %q", dir)
 	}
+	parent, err := os.Stat(base)
+	if err != nil {
+		return "", err
+	}
+	owner, ok := parent.Sys().(*syscall.Stat_t)
+	if !parent.IsDir() || !ok || (parent.Mode()&os.ModeSticky == 0 &&
+		((int(owner.Uid) != os.Getuid() && owner.Uid != 0) || parent.Mode().Perm()&0o022 != 0)) {
+		return "", fmt.Errorf("SSH control directory parent %s is not safe", base)
+	}
 	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 		return "", err
 	}
@@ -43,7 +52,7 @@ func privateControlDir(base string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	owner, ok := info.Sys().(*syscall.Stat_t)
+	owner, ok = info.Sys().(*syscall.Stat_t)
 	if !info.IsDir() || !ok || int(owner.Uid) != os.Getuid() || info.Mode().Perm()&0o077 != 0 {
 		return "", fmt.Errorf("SSH control directory %s is not private to this user", dir)
 	}

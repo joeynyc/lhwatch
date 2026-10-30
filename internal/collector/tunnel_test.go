@@ -149,6 +149,53 @@ func TestRemoteTunnelSharesOneConnectionAndPrefersTheSamePort(t *testing.T) {
 	}
 }
 
+func TestTunnelManagersKeepSeparateSockets(t *testing.T) {
+	first, _ := tunnelFixture(t)
+	second := NewTunnels(5 * time.Second)
+	second.controlDir = first.controlDir
+	t.Cleanup(func() { second.Close() })
+	for _, tunnels := range []*Tunnels{first, second} {
+		if _, err := tunnels.Open(context.Background(), spark, remoteService(freePort(t))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a, b := first.masters[spark.Name].path, second.masters[spark.Name].path
+	if a == b {
+		t.Fatalf("managers share a socket: %s", a)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(b); err != nil {
+		t.Fatalf("closing first manager removed second socket: %v", err)
+	}
+}
+
+func TestStaleTunnelSocketsAreRemovedAndLiveOnesKept(t *testing.T) {
+	dir := shortTempDir(t)
+	listen := func(name string) *net.UnixListener {
+		l, err := net.ListenUnix("unix", &net.UnixAddr{Name: filepath.Join(dir, name), Net: "unix"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return l
+	}
+	stale := listen("t0123456789abcdef")
+	stale.SetUnlinkOnClose(false)
+	stale.Close()
+	live := listen("tfedcba9876543210")
+	defer live.Close()
+	other := listen("c0123456789abcdef")
+	other.SetUnlinkOnClose(false)
+	other.Close()
+	removeStaleTunnelSockets(dir)
+	for name, want := range map[string]bool{"t0123456789abcdef": false, "tfedcba9876543210": true, "c0123456789abcdef": true} {
+		if _, err := os.Lstat(filepath.Join(dir, name)); (err == nil) != want {
+			t.Errorf("%s: exists=%v, want %v", name, err == nil, want)
+		}
+	}
+}
+
 func TestBusyLocalPortFallsBackToAnotherPort(t *testing.T) {
 	tunnels, log := tunnelFixture(t)
 	busy, err := net.Listen("tcp4", "127.0.0.1:0")

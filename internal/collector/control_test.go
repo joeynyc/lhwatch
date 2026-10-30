@@ -81,6 +81,31 @@ func TestPrivateControlDirRejectsUnsafeDirectories(t *testing.T) {
 	}
 }
 
+func TestPrivateControlDirChecksParent(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode os.FileMode
+		ok   bool
+	}{
+		{"private", 0o700, true},
+		{"shared read only", 0o755, true},
+		{"group writable", 0o770, false},
+		{"other writable", 0o707, false},
+		{"sticky shared", os.ModeSticky | 0o777, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := shortTempDir(t)
+			if err := os.Chmod(base, tc.mode); err != nil {
+				t.Fatal(err)
+			}
+			_, err := privateControlDir(base)
+			if (err == nil) != tc.ok {
+				t.Fatalf("mode %v: %v", tc.mode, err)
+			}
+		})
+	}
+}
+
 // The fake ssh records each invocation, creates the control socket path like
 // a master would, and runs the helper for ordinary commands.
 const recordingSSH = `

@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"net"
@@ -9,10 +10,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/joeynyc/lhwatch/internal/config"
@@ -63,8 +66,33 @@ func NewTunnels(timeout time.Duration) *Tunnels {
 	t := &Tunnels{timeout: timeout, masters: map[string]*tunnelMaster{}}
 	if dir, err := privateControlDir(controlBase()); err == nil {
 		t.controlDir = dir
+		removeStaleTunnelSockets(dir)
 	}
 	return t
+}
+
+var tunnelSocketName = regexp.MustCompile(`^t[0-9a-f]{16}$`)
+
+// removeStaleTunnelSockets deletes tunnel sockets left by a master that was
+// killed before it could clean up. A socket still accepting connections
+// belongs to a live master, possibly another instance, and is kept.
+func removeStaleTunnelSockets(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !tunnelSocketName.MatchString(e.Name()) || e.Type()&os.ModeSocket == 0 {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		conn, err := net.DialTimeout("unix", path, 200*time.Millisecond)
+		if err == nil {
+			conn.Close()
+		} else if errors.Is(err, syscall.ECONNREFUSED) {
+			_ = os.Remove(path)
+		}
+	}
 }
 
 // connectAddress turns a listening address into one a client can dial:
@@ -190,9 +218,17 @@ func (t *Tunnels) master(ctx context.Context, host domain.Host) (*tunnelMaster, 
 		}
 		t.stop(m)
 	}
-	// Distinct from the scan socket so the two connections never interfere.
-	path := filepath.Join(t.controlDir, "t"+controlName(host))
-	_ = os.Remove(path) // a stale socket from a killed session
+	// Distinct from scan sockets and other tunnel connections.
+	var id [8]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		return nil, fmt.Errorf("%s: create tunnel socket name: %w", host.Name, err)
+	}
+	path := filepath.Join(t.controlDir, fmt.Sprintf("t%x", id))
+	if _, err := os.Lstat(path); err == nil {
+		return nil, fmt.Errorf("%s: tunnel socket already exists", host.Name)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
 	seconds := int(t.timeout.Seconds() + 0.999)
 	// ClearAllForwardings drops forwards from SSH config, so only requested
 	// ports are opened; runtime -O forward requests are unaffected.
