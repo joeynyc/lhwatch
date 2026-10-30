@@ -4,6 +4,20 @@ lhwatch has three layers of checks: unit suites that run anywhere, a tmux smoke 
 
 [ci.md](ci.md) describes which of these run in continuous integration.
 
+## Make targets
+
+```sh
+make test
+make vet
+make build
+make cross
+make release VERSION=v0.1.0
+python3 scripts/smoke.py
+python3 scripts/smoke.py --docker
+```
+
+`make build` writes `bin/lhwatch`. `make cross` builds the four release targets into `dist/`. `make release VERSION=vX.Y.Z` writes the release archives and checksums to `dist/release`. See [ci.md](ci.md) for the release procedure.
+
 ## Requirements
 
 | Check | Needs |
@@ -37,7 +51,7 @@ python3 scripts/smoke.py
 python3 scripts/smoke.py --docker
 ```
 
-The script builds `bin/lhwatch`, then drives it in tmux on an isolated tmux socket. Without options it runs on this machine only:
+The suite requires `tmux`. It builds `bin/lhwatch`, then drives the actual TUI against disposable listeners in tmux on an isolated tmux socket. It covers search, cancel, confirmed stop, and disappearance. Without options it runs on this machine only:
 
 - Starts a disposable listener in a temporary project with a `.lhwatch.json` name and endpoint label, and checks that `--json` reports its name, label, and `can_stop`.
 - In the TUI, searches for the project, checks that the selected row and details match the listener's host, PID, port, and naming source, opens the keyboard guide, cancels a stop, then confirms one and waits for the listener to exit and disappear.
@@ -53,7 +67,7 @@ Before pressing `y`, the script reads the confirmation and checks its host, PID,
 - Builds a native Linux binary for the container's architecture and checks that it discovers the same listener.
 - Stops that listener through the TUI over SSH and checks that it disappears while the local listener remains.
 
-The container, key, listeners, and tmux server are removed when the script exits. The image stays cached for later runs.
+The container, key, listeners, and tmux server are removed when the script exits. The image stays cached for later runs. The script does not stop existing workloads or change your SSH trust store.
 
 ## Your own SSH hosts
 
@@ -98,7 +112,8 @@ On exit, the script removes the container only after its ownership label matches
 - Listener visibility follows OS permissions and the current network namespace. Unknown or unobservable metadata never grants stop permission.
 - A listening port is not an application health check.
 - A successful stop means SIGTERM was sent, not that the process exited. A process may ignore it or be restarted by a supervisor.
-- Linux pidfds bind the signal to one process incarnation when supported. macOS and older Linux kernels fall back to `kill()`, which leaves a small check-to-signal race, as the README explains.
+- Linux pidfds bind the signal to one process incarnation when supported. macOS and older Linux kernels fall back to `kill()`, which leaves a small check-to-signal race, as [stopping.md](stopping.md) explains.
 - SSH collection has a client-side deadline. If a stop response is lost, the outcome is reported as unknown and the host is refreshed.
+- Visibility limits are described in [visibility.md](visibility.md).
 - Host-network container attribution needs Python 3 inside the container and readable descriptors in its PID namespace. Published Docker ports without an observed OS listener are not shown.
 - The demo and screenshots use simulated processes and placeholder hostnames.

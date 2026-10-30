@@ -1,6 +1,6 @@
 # Architecture
 
-lhwatch is a Go terminal UI that runs one small Python collector on each monitored host, locally or over SSH, and never installs anything there. This page explains how the pieces fit together and which invariants keep stopping safe. The README covers behavior from a user's point of view.
+lhwatch is a Go terminal UI that runs one small Python collector on each monitored host, locally or over SSH, and never installs anything there. This page explains how the pieces fit together and which invariants keep stopping safe. The [README](README.md) and the pages under [docs/](docs/) cover behavior from a user's point of view.
 
 ```
  this machine                                          each monitored host
@@ -70,4 +70,4 @@ Control sockets live in `$XDG_RUNTIME_DIR/lhwatch-UID` or `/tmp/lhwatch-UID`. If
 
 ## Testing
 
-`make test` runs Go race tests (with fake `ssh` scripts for transport, multiplexing, and tunnels) and the Python suites for the collector. The scripts in `scripts/` drive the real TUI in tmux; see the README and [docs/ci.md](docs/ci.md) for which run in CI.
+`make test` runs Go race tests (with fake `ssh` scripts for transport, multiplexing, and tunnels) and the Python suites for the collector. The scripts in `scripts/` drive the real TUI in tmux; see [docs/verification.md](docs/verification.md) and [docs/ci.md](docs/ci.md) for which run in CI.
