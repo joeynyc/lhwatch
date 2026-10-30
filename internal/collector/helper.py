@@ -589,7 +589,13 @@ def docker_enrich(services, budget=DOCKER_BUDGET, host_network=True):
             warnings.append(message)
 
     try:
-        ids = docker_command(endpoint, ['ps', '-q', '--no-trunc', '--filter', 'status=running'], deadline).split()
+        # Unfiltered ps includes paused and restarting containers, whose port
+        # proxies still run. A hung daemon may also own such proxies.
+        try:
+            ids = docker_command(endpoint, ['ps', '-q', '--no-trunc'], deadline).split()
+        except subprocess.TimeoutExpired:
+            listed = True
+            raise
         ids = [cid for cid in ids if re.fullmatch('[0-9a-f]{64}', cid)]
         listed = True
         truncated = len(ids) > DOCKER_LIMIT
@@ -619,54 +625,54 @@ def docker_enrich(services, budget=DOCKER_BUDGET, host_network=True):
                 if not matches:
                     namespaces_known = False
         complete = not truncated and {c['id'] for c in containers} == set(ids)
+        # Published bindings protect stopping, so claim them all before the
+        # display-only exec probes can exhaust the deadline.
         for container in containers:
+            ports = container.get('ports')
+            if container.get('network_mode') == 'host' or not isinstance(ports, dict):
+                continue
+            for port, bindings in ports.items():
+                if not port.endswith('/tcp') or not isinstance(bindings, list):
+                    continue
+                for binding in bindings:
+                    if not isinstance(binding, dict):
+                        continue
+                    address, port = binding.get('HostIp'), str(binding.get('HostPort', ''))
+                    if not isinstance(address, str) or not address or not port.isdigit() or not 0 < int(port) < 65536:
+                        continue
+                    family = 'IPv6' if ':' in address else 'IPv4'
+                    claim(('published',) + endpoint_key(address, port, family), container)
+        for container in containers:
+            if container.get('network_mode') != 'host' or not host_network:
+                continue
             if time.monotonic() >= deadline:
                 problem('Docker details incomplete: scan time limit reached')
-                complete = False
                 break
             cid = container['id']
-            if container.get('network_mode') == 'host':
-                if not host_network:
-                    continue
-                if not namespaces_known:
-                    problem('Docker host-network names unavailable: complete PID namespace inventory required')
-                    continue
-                if sys.platform != 'linux':
-                    problem('Docker host-network names unavailable on this platform')
-                    continue
-                if container.get('pid_mode') not in ('', 'private') or cid in donors:
-                    problem('Docker names unavailable for containers sharing another PID namespace')
-                    continue
-                try:
-                    data = json.loads(docker_command(endpoint, ['exec', cid, 'python3', '-I', '-S', '-B', '-c', DOCKER_PROBE], deadline))
-                    if not isinstance(data, dict) or not isinstance(data.get('sockets'), list):
-                        raise ValueError('Invalid socket evidence')
-                    if data.get('partial'):
-                        problem('Docker details incomplete: some container process ownership is unavailable')
-                    for owned in data['sockets']:
-                        if (not isinstance(owned, dict) or not str(owned.get('inode', '')).isdigit()
-                                or owned.get('family') not in ('IPv4', 'IPv6')
-                                or not isinstance(owned.get('address'), str)
-                                or type(owned.get('port')) is not int or not 0 < owned['port'] < 65536):
-                            continue
-                        claim(('inode', str(owned['inode'])) + endpoint_key(owned['address'], owned['port'], owned['family']), container)
-                except (OSError, RuntimeError, ValueError, RecursionError, subprocess.TimeoutExpired):
-                    problem('Docker names incomplete: container socket inspection unavailable (requires Python 3 and process access)')
-            else:
-                ports = container.get('ports')
-                if not isinstance(ports, dict):
-                    continue
-                for port, bindings in ports.items():
-                    if not port.endswith('/tcp') or not isinstance(bindings, list):
+            if not namespaces_known:
+                problem('Docker host-network names unavailable: complete PID namespace inventory required')
+                continue
+            if sys.platform != 'linux':
+                problem('Docker host-network names unavailable on this platform')
+                continue
+            if container.get('pid_mode') not in ('', 'private') or cid in donors:
+                problem('Docker names unavailable for containers sharing another PID namespace')
+                continue
+            try:
+                data = json.loads(docker_command(endpoint, ['exec', cid, 'python3', '-I', '-S', '-B', '-c', DOCKER_PROBE], deadline))
+                if not isinstance(data, dict) or not isinstance(data.get('sockets'), list):
+                    raise ValueError('Invalid socket evidence')
+                if data.get('partial'):
+                    problem('Docker details incomplete: some container process ownership is unavailable')
+                for owned in data['sockets']:
+                    if (not isinstance(owned, dict) or not str(owned.get('inode', '')).isdigit()
+                            or owned.get('family') not in ('IPv4', 'IPv6')
+                            or not isinstance(owned.get('address'), str)
+                            or type(owned.get('port')) is not int or not 0 < owned['port'] < 65536):
                         continue
-                    for binding in bindings:
-                        if not isinstance(binding, dict):
-                            continue
-                        address, port = binding.get('HostIp'), str(binding.get('HostPort', ''))
-                        if not isinstance(address, str) or not address or not port.isdigit() or not 0 < int(port) < 65536:
-                            continue
-                        family = 'IPv6' if ':' in address else 'IPv4'
-                        claim(('published',) + endpoint_key(address, port, family), container)
+                    claim(('inode', str(owned['inode'])) + endpoint_key(owned['address'], owned['port'], owned['family']), container)
+            except (OSError, RuntimeError, ValueError, RecursionError, subprocess.TimeoutExpired):
+                problem('Docker names incomplete: container socket inspection unavailable (requires Python 3 and process access)')
     except (OSError, RuntimeError, ValueError, RecursionError, subprocess.TimeoutExpired):
         problem('Docker details unavailable: local daemon could not be inspected within the scan limit')
         complete = False
@@ -704,7 +710,7 @@ def docker_enrich(services, budget=DOCKER_BUDGET, host_network=True):
     protected = {(s['pid'], s['identity']) for s in services
                  if (s.get('container_id') or id(s) in ambiguous) and s.get('pid', 0) > 0 and s.get('identity')}
     for service in services:
-        if (service.get('pid'), service.get('identity')) in protected:
+        if (service.get('pid'), service.get('identity')) in protected and id(service) not in ambiguous:
             service['can_stop'] = False
             service['stop_reason'] = 'Process also serves a Docker container; use Docker to stop it'
     if listed and not complete:
@@ -756,14 +762,14 @@ def scan(include_docker=True, timeout_seconds=None, docker_host_network=True):
         container_process = service.pop('_container_process', False)
         if container_process:
             reason = 'Container process; stop the container with its container manager'
-        elif container_process is None:
-            reason = 'Container membership could not be verified'
         elif pid == 0:
             reason = 'Owning process could not be verified'
         elif pid == 1 or pid in protected:
             reason = 'Protected system or ancestor process'
         elif uid != os.getuid():
             reason = 'Process belongs to another user'
+        elif container_process is None:
+            reason = 'Container membership could not be verified'
         elif not service.get('identity'):
             reason = 'Process identity unavailable'
         service['can_stop'] = not reason

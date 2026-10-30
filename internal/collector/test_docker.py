@@ -99,7 +99,31 @@ class DockerNaming(unittest.TestCase):
                                        container(id=OTHER, name='/other', network_mode='bridge', ports=binding)])
         self.assertNotIn('container_id', proxy)
         self.assertFalse(proxy['can_stop'])
+        self.assertIn('ambiguous', proxy['stop_reason'])
         self.assertFalse(sibling['can_stop'])
+
+    def test_inventory_lists_paused_and_restarting_containers(self):
+        _, calls = self.enrich([listener()])
+        self.assertEqual(calls[0], ['ps', '-q', '--no-trunc'])
+
+    def test_hung_docker_listing_refuses_ordinary_stop(self):
+        service = listener(pid=400, identity='boot:400:1', port=18000, can_stop=True)
+        with patch.object(h, 'docker_endpoint', return_value=('unix:///var/run/docker.sock', '')), patch.object(h, 'docker_command', side_effect=subprocess.TimeoutExpired(['docker'], 1)):
+            self.assertTrue(ENRICH([service]))
+        self.assertFalse(service['can_stop'])
+
+    def test_slow_exec_probes_do_not_hide_published_bindings(self):
+        proxy = listener(pid=400, identity='boot:400:1', address='127.0.0.1', port=18000, can_stop=True)
+        ordinary = listener(pid=500, identity='boot:500:1', port=19000, can_stop=True)
+        bridge = container(id=OTHER, name='/web', network_mode='bridge',
+                           ports={'8000/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '18000'}]})
+        clock = iter([100] + [200] * 50)
+        with patch.object(h.time, 'monotonic', side_effect=lambda: next(clock)):
+            warnings, calls = self.enrich([proxy, ordinary], [container(), bridge])
+        self.assertFalse(any(c[0] == 'exec' for c in calls))
+        self.assertTrue(warnings)
+        self.assertEqual(proxy['container_id'], OTHER)
+        self.assertTrue(ordinary['can_stop'])
 
     def test_incomplete_published_inventory_refuses_ordinary_stop(self):
         many = [container(id=format(i + 1, '064x'), name='/c' + str(i), network_mode='bridge') for i in range(h.DOCKER_LIMIT + 1)]
@@ -213,6 +237,23 @@ class DockerNaming(unittest.TestCase):
         self.assertIn('Docker', result['message'])
         self.assertEqual([c[0] for c in calls], ['ps', 'inspect'])
         kill.assert_not_called()
+
+    def test_stop_refuses_ambiguous_or_incomplete_docker_inventory(self):
+        raw = listener(pid=900003, uid=os.getuid(), identity='linux:boot:3', address='127.0.0.1', port=18000)
+        target = {k: raw[k] for k in ['pid', 'identity', 'address', 'port', 'family']}
+        binding = {'8000/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '18000'}]}
+        cases = {
+            'ambiguous': [container(network_mode='bridge', ports=binding),
+                          container(id=OTHER, name='/other', network_mode='bridge', ports=binding)],
+            'incomplete': [container(id=format(i + 1, '064x'), name='/c' + str(i), network_mode='bridge')
+                           for i in range(h.DOCKER_LIMIT + 1)],
+        }
+        for name, containers in cases.items():
+            with self.subTest(name):
+                result, _, kill = self.stop_with_docker([raw], target, containers)
+                self.assertFalse(result['sent'])
+                self.assertIn(name, result['message'])
+                kill.assert_not_called()
 
     def test_stop_signals_ordinary_process_when_docker_is_unrelated(self):
         raw = listener(pid=900003, uid=os.getuid(), identity='linux:boot:3', address='127.0.0.1', port=18002)
