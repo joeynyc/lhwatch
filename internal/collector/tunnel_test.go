@@ -41,6 +41,8 @@ func tunnelFixture(t *testing.T) (*Tunnels, string) {
 	t.Helper()
 	log := filepath.Join(t.TempDir(), "calls.jsonl")
 	t.Setenv("LHWATCH_TEST_ARGS", log)
+	// Keep NewTunnels' stale-socket sweep out of the real control directory.
+	t.Setenv("XDG_RUNTIME_DIR", shortTempDir(t))
 	fakeSSH(t, tunnelSSH)
 	tunnels := NewTunnels(5 * time.Second)
 	tunnels.controlDir = shortTempDir(t)
