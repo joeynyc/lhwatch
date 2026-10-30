@@ -86,13 +86,16 @@ def container_ids(cgroup):
 
 
 def other_container_cgroup(process_path, root=PROC):
-    """Protect host-visible container processes without disabling native-in-container use."""
+    """Protect host-visible container processes without disabling native-in-container use.
+
+    Returns None when membership cannot be read, so callers refuse to stop it.
+    """
     try:
         target = read_text(os.path.join(process_path, 'cgroup'))
         own = read_text(os.path.join(root, 'self', 'cgroup'))
         return bool(container_ids(target) - container_ids(own))
     except OSError:
-        return False
+        return None
 
 
 def linux_scan(root=PROC):
@@ -454,7 +457,7 @@ def launch_endpoint_label(argv, address, port, family):
 # Path/Args are private launch evidence and must not enter the service JSON.
 DOCKER_FORMAT = '''{"id":{{json .Id}},"name":{{json .Name}},"image":{{json .Config.Image}},"running":{{json .State.Running}},"network_mode":{{json .HostConfig.NetworkMode}},"pid_mode":{{json .HostConfig.PidMode}},"compose_project":{{json (index .Config.Labels "com.docker.compose.project")}},"compose_service":{{json (index .Config.Labels "com.docker.compose.service")}},"ports":{{json .NetworkSettings.Ports}},"path":{{json .Path}},"args":{{json .Args}}}'''
 DOCKER_BUDGET = 1.8
-DOCKER_LIMIT = 24
+DOCKER_LIMIT = 64
 
 # Host networking shares /proc/net, so that table alone proves nothing. Only
 # socket inodes actually held by processes in the container's private PID
@@ -567,9 +570,13 @@ def docker_enrich(services, budget=DOCKER_BUDGET, host_network=True):
     if not endpoint:
         return [reason] if reason else []
     if budget <= 0:
+        refuse_unverified_proxies(services)
         return ['Docker details skipped: scan time budget exhausted']
     deadline = time.monotonic() + min(budget, DOCKER_BUDGET)
     warnings, candidates = [], {}
+    # A reachable daemon whose listing succeeded but whose published bindings
+    # were not all inspected cannot rule out a same-user port proxy.
+    listed = complete = False
 
     def claim(key, container):
         candidates.setdefault(key, {})[container['id']] = container
@@ -584,6 +591,7 @@ def docker_enrich(services, budget=DOCKER_BUDGET, host_network=True):
     try:
         ids = docker_command(endpoint, ['ps', '-q', '--no-trunc', '--filter', 'status=running'], deadline).split()
         ids = [cid for cid in ids if re.fullmatch('[0-9a-f]{64}', cid)]
+        listed = True
         truncated = len(ids) > DOCKER_LIMIT
         if truncated:
             problem('Docker details incomplete: container scan limit reached')
@@ -610,9 +618,11 @@ def docker_enrich(services, budget=DOCKER_BUDGET, host_network=True):
                 donors.update(matches)
                 if not matches:
                     namespaces_known = False
+        complete = not truncated and {c['id'] for c in containers} == set(ids)
         for container in containers:
             if time.monotonic() >= deadline:
                 problem('Docker details incomplete: scan time limit reached')
+                complete = False
                 break
             cid = container['id']
             if container.get('network_mode') == 'host':
@@ -659,13 +669,17 @@ def docker_enrich(services, budget=DOCKER_BUDGET, host_network=True):
                         claim(('published',) + endpoint_key(address, port, family), container)
     except (OSError, RuntimeError, ValueError, RecursionError, subprocess.TimeoutExpired):
         problem('Docker details unavailable: local daemon could not be inspected within the scan limit')
+        complete = False
 
+    ambiguous = set()
     for service in services:
         key = endpoint_key(service['address'], service['port'], service['family'])
         matches = dict(candidates.get(('published',) + key, {}))
         matches.update(candidates.get(('inode', service.get('_socket_inode', '')) + key, {}))
         if len(matches) > 1:
-            service['visibility_reason'] = 'Container ownership is ambiguous; no container name assigned'
+            ambiguous.add(id(service))
+            service.update(visibility_reason='Container ownership is ambiguous; no container name assigned',
+                           can_stop=False, stop_reason='Container ownership is ambiguous; use Docker to stop it')
         elif matches:
             container = next(iter(matches.values()))
             if not service.get('endpoint_label') and container.get('network_mode') == 'host':
@@ -688,12 +702,20 @@ def docker_enrich(services, budget=DOCKER_BUDGET, host_network=True):
     # whole process is unavailable for stopping, without inventing a container
     # owner for those other endpoints.
     protected = {(s['pid'], s['identity']) for s in services
-                 if s.get('container_id') and s.get('pid', 0) > 0 and s.get('identity')}
+                 if (s.get('container_id') or id(s) in ambiguous) and s.get('pid', 0) > 0 and s.get('identity')}
     for service in services:
         if (service.get('pid'), service.get('identity')) in protected:
             service['can_stop'] = False
             service['stop_reason'] = 'Process also serves a Docker container; use Docker to stop it'
+    if listed and not complete:
+        refuse_unverified_proxies(services)
     return warnings
+
+
+def refuse_unverified_proxies(services):
+    for service in services:
+        if service.get('can_stop') and not service.get('container_id'):
+            service.update(can_stop=False, stop_reason='Docker inventory incomplete; process may forward container ports')
 
 
 def scan(include_docker=True, timeout_seconds=None, docker_host_network=True):
@@ -726,13 +748,16 @@ def scan(include_docker=True, timeout_seconds=None, docker_host_network=True):
         argv = service.pop('_argv', [])
         # A container cwd names its own filesystem, not an identically named
         # host directory. Only use host metadata for processes in this context.
-        project_label = ({} if service.get('_container_process') else
+        project_label = ({} if service.get('_container_process', False) is not False else
                          project_endpoint_label(service['project_path'], service['port'], metadata))
         service.update(project_label or
                        launch_endpoint_label(argv, service['address'], service['port'], service['family']))
         reason = ''
-        if service.pop('_container_process', False):
+        container_process = service.pop('_container_process', False)
+        if container_process:
             reason = 'Container process; stop the container with its container manager'
+        elif container_process is None:
+            reason = 'Container membership could not be verified'
         elif pid == 0:
             reason = 'Owning process could not be verified'
         elif pid == 1 or pid in protected:

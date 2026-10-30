@@ -91,6 +91,29 @@ class DockerNaming(unittest.TestCase):
         self.assertNotIn('container_id', service)
         self.assertIn('ambiguous', service['visibility_reason'].lower())
 
+    def test_ambiguous_published_proxy_and_its_siblings_cannot_stop(self):
+        proxy = listener(pid=400, identity='boot:400:1', address='127.0.0.1', port=18000, can_stop=True)
+        sibling = dict(proxy, port=18001)
+        binding = {'8000/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '18000'}]}
+        self.enrich([proxy, sibling], [container(network_mode='bridge', ports=binding),
+                                       container(id=OTHER, name='/other', network_mode='bridge', ports=binding)])
+        self.assertNotIn('container_id', proxy)
+        self.assertFalse(proxy['can_stop'])
+        self.assertFalse(sibling['can_stop'])
+
+    def test_incomplete_published_inventory_refuses_ordinary_stop(self):
+        many = [container(id=format(i + 1, '064x'), name='/c' + str(i), network_mode='bridge') for i in range(h.DOCKER_LIMIT + 1)]
+        service = listener(pid=400, identity='boot:400:1', port=18000, can_stop=True)
+        self.enrich([service], many)
+        self.assertFalse(service['can_stop'])
+        self.assertIn('incomplete', service['stop_reason'])
+
+    def test_unreachable_daemon_listing_keeps_ordinary_stop(self):
+        service = listener(pid=400, identity='boot:400:1', port=18000, can_stop=True)
+        with patch.object(h, 'docker_endpoint', return_value=('unix:///var/run/docker.sock', '')), patch.object(h, 'docker_command', side_effect=RuntimeError('permission denied')):
+            self.assertTrue(ENRICH([service]))
+        self.assertTrue(service['can_stop'])
+
     def test_shared_pid_namespace_is_never_used_as_ownership_evidence(self):
         for mode in ['host', 'container:' + OTHER]:
             with self.subTest(mode=mode):
@@ -116,7 +139,7 @@ class DockerNaming(unittest.TestCase):
                 self.assertTrue(warnings)
 
     def test_incomplete_inventory_cannot_prove_private_pid_namespace(self):
-        containers = [container(id=format(i + 1, '064x'), name='/c' + str(i)) for i in range(25)]
+        containers = [container(id=format(i + 1, '064x'), name='/c' + str(i)) for i in range(h.DOCKER_LIMIT + 1)]
         service = listener()
         warnings, calls = self.enrich([service], containers)
         self.assertNotIn('container_id', service)
@@ -344,7 +367,18 @@ class DockerProbeAndTransport(unittest.TestCase):
             (base / '123/cgroup').write_text('0::/user.slice/session.scope\n')
             self.assertFalse(h.other_container_cgroup(str(base / '123'), root))
             (base / '123/cgroup').unlink()
-            self.assertFalse(h.other_container_cgroup(str(base / '123'), root))
+            self.assertIsNone(h.other_container_cgroup(str(base / '123'), root))
+
+    def test_unreadable_container_membership_refuses_scan_and_stop(self):
+        raw = listener(pid=900001, uid=os.getuid(), identity='linux:boot:1', _container_process=None)
+        target = {k: raw[k] for k in ['pid', 'identity', 'address', 'port', 'family']}
+        with patch.object(h.sys, 'platform', 'linux'), patch.object(h, 'linux_scan', side_effect=lambda: ([dict(raw)], [])), patch.object(h, 'protected_pids', return_value={0, 1}), patch.object(h, 'docker_enrich', return_value=[]), patch.object(h, 'open_pidfd', return_value=None), patch.object(h.os, 'kill') as kill:
+            service = h.scan()['services'][0]
+            result = h.stop(target)
+        self.assertFalse(service['can_stop'])
+        self.assertIn('membership', service['stop_reason'])
+        self.assertFalse(result['sent'])
+        kill.assert_not_called()
 
     def test_other_container_runtimes_are_recognized(self):
         uid_slice = '/user.slice/user-1000.slice/user@1000.service/user.slice/'

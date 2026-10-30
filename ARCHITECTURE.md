@@ -34,7 +34,7 @@ lhwatch is a Go terminal UI that runs one small Python collector on each monitor
 2. **Transport.** `Collector.invoke` base64-encodes a small JSON request, starts `python3 - <token>` (or `ssh … -- dest "python3 - <token>"`), and writes `helper.py` to stdin. The remote shell only ever sees that constant command and a base64 token. Output is capped at 16 MiB and the whole call is bounded by the host timeout.
 3. **Discovery.** On Linux the helper reads `/proc/net/tcp{,6}` for listening sockets, then walks `/proc/*/fd` to find each socket's owning process; process identity is `boot_id:pid:start_ticks`. On macOS it uses `lsof` and `ps`, with identity built from boot time, PID, start time, and command.
 4. **Attribution, display only.** Project names come from the nearest `.lhwatch.json`, `package.json`, or project marker above the working directory, or from a macOS app bundle. Docker names come from `docker inspect`. For host-network containers, the helper probes the container itself (`docker exec`) and requires the same socket inode **and** endpoint. Endpoint purposes come from `.lhwatch.json` or explicit launch arguments. Nothing is inferred from a port number.
-5. **Guards.** Every service gets `can_stop` and a `stop_reason`. Stopping is refused for PID 1, the collector and its ancestors, other users' processes, missing identity, and processes in a container's cgroup (Docker, Podman, containerd, CRI-O, Kubernetes, LXC) or serving a published Docker port.
+5. **Guards.** Every service gets `can_stop` and a `stop_reason`. Stopping is refused for PID 1, the collector and its ancestors, other users' processes, missing identity, processes in a container's cgroup (Docker, Podman, containerd, CRI-O, Kubernetes, LXC) or whose cgroup cannot be read, and processes serving a published Docker port or one claimed by more than one container. If Docker lists containers but the inventory is incomplete (over `DOCKER_LIMIT`, a timeout, or a failed inspect), every remaining ordinary process is refused, because an unseen container could be using it as a port proxy.
 6. **Decode.** Go decodes the JSON strictly (unknown fields are rejected) and validates every service. The UI then re-stamps `Host` with the configured name, so a collector can never relabel or retarget its rows. All collector text passes through `clean()` before rendering.
 
 ## Stopping a process
@@ -60,6 +60,7 @@ Control sockets live in `$XDG_RUNTIME_DIR/lhwatch-UID` or `/tmp/lhwatch-UID`. If
 
 - Grouping never changes a signal target. `Service.Key()` identifies an endpoint; `GroupKey()` only groups display rows.
 - No guessing. Names, container ownership, and purposes require direct evidence. Ambiguity leaves a field empty and explains why.
+- Stopping fails closed. Anything unknown, unreadable, ambiguous, or incomplete makes a process unstoppable with a `stop_reason`; it never makes one stoppable.
 - Collector output is untrusted. Decode it strictly, cap it, and sanitize it before display.
 - Hosts are independent. A failing host keeps its last observation, marked stale, and disables its stop controls.
 - A click never sends a signal. Mouse clicks become the same key presses the keyboard sends, except that confirming a stop is keyboard-only.
