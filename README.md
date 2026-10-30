@@ -8,9 +8,22 @@ See named services and their ports, filter across machines, inspect a process, a
 
 ## Requirements
 
-Requires **Go 1.26+ to build**, **Python 3.9+ on each monitored machine**, and a terminal. macOS uses the system `lsof` and `ps`. Linux uses `/proc`. Remote monitoring uses your existing OpenSSH client, keys, agent, and SSH configuration.
+- **Release binaries** are static (`CGO_ENABLED=0`) and need nothing beyond a terminal.
+- **Go 1.26+** is needed only to build from source or run `go install`.
+- **Python 3.9+** (`python3`) is needed on every monitored machine, local and SSH. lhwatch runs a short-lived collector there; nothing is installed.
+- **macOS** hosts use the system `lsof` and `ps`. **Linux** hosts use `/proc`.
+- **Remote hosts** are reached with your existing OpenSSH client, keys, agent, and SSH configuration.
 
 ## Install
+
+From a release: download the archive for your platform from the repository's **Releases** page, or with the GitHub CLI:
+
+```sh
+gh release download --repo joeynyc/lhwatch --pattern '*darwin_arm64.tar.gz' --pattern SHA256SUMS
+shasum -a 256 --check --ignore-missing SHA256SUMS
+```
+
+Extract the archive and move `lhwatch` onto your `PATH`. Archives are published for `darwin_arm64`, `darwin_amd64`, `linux_arm64`, and `linux_amd64`; ARM64 Linux machines such as an NVIDIA DGX Spark use `linux_arm64`. If `gh` isn't installed on a machine, download the archive elsewhere and copy it over with `scp`. A binary downloaded through a browser on macOS may need `xattr -d com.apple.quarantine lhwatch` because releases are not code-signed.
 
 With Go:
 
@@ -24,15 +37,6 @@ From source:
 git clone https://github.com/joeynyc/lhwatch && cd lhwatch && go build -trimpath -o bin/lhwatch .
 ./bin/lhwatch
 ```
-
-From a release: download the archive for your platform from the repository's **Releases** page, or with the GitHub CLI:
-
-```sh
-gh release download --repo joeynyc/lhwatch --pattern '*darwin_arm64.tar.gz' --pattern SHA256SUMS
-shasum -a 256 --check --ignore-missing SHA256SUMS
-```
-
-Extract the archive and move `lhwatch` onto your `PATH`. Archives are published for `darwin_arm64`, `darwin_amd64`, `linux_arm64`, and `linux_amd64`; ARM64 Linux machines such as an NVIDIA DGX Spark use `linux_arm64`. If `gh` isn't installed on a machine, download the archive elsewhere and copy it over with `scp`. A binary downloaded through a browser on macOS may need `xattr -d com.apple.quarantine lhwatch` because releases are not code-signed.
 
 The examples below assume `lhwatch` is on your `PATH`; use `./bin/lhwatch` if you built from source.
 
@@ -83,11 +87,12 @@ By default, lhwatch reads `$XDG_CONFIG_HOME/lhwatch/config.json`, or `~/.config/
 }
 ```
 
-A host without `ssh` represents the machine running the TUI. If omitted, one named `local` is added. Configure at most one local entry. SSH entries can also set `port` and `identity_file`; `~/` is expanded in the identity path. Names must be unique.
+A host without `ssh` represents the machine running the TUI. If omitted, one named `local` is added. Configure at most one local entry. SSH entries can also set `port` (1–65535) and `identity_file`; `~/` is expanded in the identity path. Names must be unique, 1–32 characters, and start with a letter or digit; they may contain letters, digits, spaces, `.`, `_`, and `-`. Unknown keys are rejected, and the file must be a single JSON object of at most 1 MiB.
 
 ```sh
 lhwatch --config lhwatch.example.json
 lhwatch --refresh 2 --timeout 5
+lhwatch --version
 ```
 
 Configuration order is defaults, file, then flags. Repeatable `--host` entries **add** hosts; duplicate names are errors rather than silent replacements. Refresh is 1–3600 seconds; each host timeout is 1–60 seconds. Personal configurations can be saved as `*.local.json`, which Git ignores.
@@ -146,8 +151,11 @@ Detected container processes do not borrow purpose mappings from identically nam
 
 | Key | Action |
 | --- | --- |
-| `↑` / `↓`, `k` / `j` | Select a service |
+| `↑` / `↓`, `k` / `j` | Select a service, or scroll an open panel |
+| `Home` / `g`, `End` / `G` | Jump to the first or last service |
+| `PgUp` / `PgDn` | Page through an open panel |
 | `/` | Search names, commands, hosts, ports, and directories |
+| `Backspace` / `Ctrl+U` while searching | Edit or clear the query |
 | `Enter` while searching | Keep the filter and return to navigation |
 | `Esc` | Cancel a dialog or clear the filter |
 | `Tab` / `Shift+Tab` | Cycle host filters |
@@ -156,7 +164,7 @@ Detected container processes do not borrow purpose mappings from identically nam
 | `O` | Close the selected service's SSH tunnel |
 | `x` | Review a stop confirmation |
 | `y` inside confirmation | Request SIGTERM for the displayed process |
-| `n`, `Esc`, or `Enter` inside confirmation | Cancel; no signal |
+| `n`, `q`, `Esc`, or `Enter` inside confirmation | Cancel; no signal |
 | `r` | Refresh |
 | `e` | Inspect host errors and warnings |
 | `?` | Keyboard help |
@@ -204,7 +212,7 @@ Output contains `schema_version`, `collected_at`, and an ordered `hosts` array. 
 
 JSON retains one record per endpoint. Optional `container_id`, `container_name`, `container_image`, and `visibility_reason` fields explain Docker attribution and missing information. Optional `endpoint_label` and `endpoint_label_source` fields carry purpose evidence; they are omitted when unknown. TUI grouping does not change the endpoint identity used for process revalidation.
 
-Exit codes: **0** for a successful snapshot, **1** if any host failed (other results still appear), **2** for invalid input or missing interactive terminal. Partial visibility is represented by `partial` and warnings, not a false claim of full visibility. Process command lines and paths can contain private information; review snapshots before sharing them.
+Exit codes: **0** for a successful snapshot, **1** if any host failed (other results still appear) or lhwatch hit a runtime error, **2** for invalid input or missing interactive terminal. Partial visibility is represented by `partial` and warnings, not a false claim of full visibility. Process command lines and paths can contain private information; review snapshots before sharing them.
 
 ## Develop and verify
 
@@ -218,7 +226,7 @@ python3 scripts/smoke.py
 python3 scripts/smoke.py --docker
 ```
 
-GitHub Actions runs formatting, vet, race tests, cross-compilation, staticcheck, and govulncheck on Linux and macOS, plus the collector tests on Python 3.9 and 3.14 (`.github/workflows/ci.yml`). The macOS job also runs the tmux TUI smoke test; see [docs/ci.md](docs/ci.md).
+GitHub Actions runs formatting, vet, race tests, and cross-compilation on Linux and macOS, staticcheck and govulncheck on Linux, plus the collector tests on Python 3.9 and 3.14 (`.github/workflows/ci.yml`). The macOS job also runs the tmux TUI smoke test; see [docs/ci.md](docs/ci.md).
 
 The smoke suite requires `tmux`. It drives the actual TUI against disposable listeners, covering search, cancel, confirmed stop, and disappearance. `--docker` additionally builds an isolated Linux SSH fixture with disposable keys, verifies real SSH transport and remote stopping, and runs the Linux binary inside the container. It does not stop existing workloads or change your SSH trust store.
 

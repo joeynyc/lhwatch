@@ -84,7 +84,7 @@ make build
 python3 scripts/docker_smoke.py --config path/to/config.json --host <name> --image <cached-image>
 ```
 
-`--host` is the host's `name` in your config. `--image` must already be on that host and contain `python3`. The script passes `--pull never`, so it never downloads an image.
+`--host` is the host's `name` in your config. `--image` must already be on that host and contain `python3`. The script passes `--pull never`, so it never downloads an image. Pass `--binary` to test a different lhwatch executable.
 
 Over SSH, the script starts one container on the host network, with a unique name, an ownership label for this run, and Compose project and service labels. The container is read-only, drops all capabilities, and listens on two IPv4 endpoints and one IPv6 endpoint. The script then checks:
 
