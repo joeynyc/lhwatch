@@ -1,4 +1,9 @@
-<p align="center"><img src="docs/assets/banner.png" alt="lhwatch: your localhost, everywhere" width="100%"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/banner.png">
+    <img src="docs/assets/banner.gif" alt="lhwatch: your localhost, everywhere" width="100%">
+  </picture>
+</p>
 
 A terminal dashboard for the TCP servers running on your Mac, your Linux machines, and your SSH hosts.
 
