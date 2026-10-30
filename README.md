@@ -1,6 +1,6 @@
-# lhwatch
+<p align="center"><img src="docs/assets/banner.png" alt="lhwatch: your localhost, everywhere" width="100%"></p>
 
-**Your localhost, everywhere.** A terminal dashboard for the TCP servers running on your Mac, your Linux machines, and your SSH hosts.
+A terminal dashboard for the TCP servers running on your Mac, your Linux machines, and your SSH hosts.
 
 See named services and their ports, filter across machines, inspect a process, and request a graceful stop without switching terminals. Each host refreshes independently, and a disconnected machine stays visibly disconnected.
 
