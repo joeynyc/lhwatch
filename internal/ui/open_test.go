@@ -141,7 +141,7 @@ func TestOpenWithoutBrowserCopiesURLAndFailuresAreShown(t *testing.T) {
 		t.Fatal("clipboard command produced nothing")
 	}
 
-	fwd.openErr = errors.New("spark: ssh tunnel failed: Permission denied\x1b[2J")
+	fwd.openErr = errors.New("gpubox: ssh tunnel failed: Permission denied\x1b[2J")
 	m, cmd = apply(m, key("o"))
 	m, _ = apply(m, cmd())
 	if !strings.HasPrefix(m.notice, "Open failed: ") || strings.Contains(m.notice, "\x1b") {

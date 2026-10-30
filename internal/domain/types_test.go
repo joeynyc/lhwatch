@@ -3,7 +3,7 @@ package domain
 import "testing"
 
 func TestGroupKeyRequiresKnownIdentity(t *testing.T) {
-	a := Service{Host: "spark", PID: 42, Identity: "boot:42:start", Port: 3000, Address: "127.0.0.1", Family: "IPv4"}
+	a := Service{Host: "gpubox", PID: 42, Identity: "boot:42:start", Port: 3000, Address: "127.0.0.1", Family: "IPv4"}
 	b := a
 	b.Port, b.Address, b.Family = 4000, "::1", "IPv6"
 	if a.GroupKey() != b.GroupKey() {
@@ -21,7 +21,7 @@ func TestGroupKeyRequiresKnownIdentity(t *testing.T) {
 	if a.GroupKey() != b.GroupKey() {
 		t.Fatal("verified container endpoints should group")
 	}
-	b.Host = "another-spark"
+	b.Host = "another-gpubox"
 	if a.GroupKey() == b.GroupKey() {
 		t.Fatal("containers on different hosts must remain distinct")
 	}

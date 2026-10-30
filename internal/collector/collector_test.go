@@ -161,8 +161,8 @@ func TestContainerStopRefusedBeforeTransport(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "transport-called")
 	t.Setenv("LHWATCH_TEST_MARKER", marker)
 	fakeSSH(t, "open(os.environ['LHWATCH_TEST_MARKER'], 'w').write('called')\nprint('{\"schema_version\":1,\"sent\":true,\"message\":\"sent\"}')")
-	host := domain.Host{Name: "spark", SSH: "spark-alias"}
-	service := domain.Service{Host: "spark", PID: 999991, Identity: "verified", Port: 3000, Address: "127.0.0.1", Family: "IPv4", ContainerID: "container", CanStop: true}
+	host := domain.Host{Name: "gpubox", SSH: "gpubox-alias"}
+	service := domain.Service{Host: "gpubox", PID: 999991, Identity: "verified", Port: 3000, Address: "127.0.0.1", Family: "IPv4", ContainerID: "container", CanStop: true}
 	result, err := New(time.Second).Stop(context.Background(), host, service)
 	if err == nil || !strings.Contains(err.Error(), "Docker") || result.Sent {
 		t.Fatalf("container controls must be refused: %+v %v", result, err)

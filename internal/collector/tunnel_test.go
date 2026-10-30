@@ -84,10 +84,10 @@ func isOp(op string) func([]string) bool {
 func spec(args []string) string { return args[slices.Index(args, "-L")+1] }
 
 func remoteService(port int) domain.Service {
-	return domain.Service{Host: "spark", Address: "0.0.0.0", Port: port, Family: "IPv4"}
+	return domain.Service{Host: "gpubox", Address: "0.0.0.0", Port: port, Family: "IPv4"}
 }
 
-var spark = domain.Host{Name: "spark", SSH: "you@spark.test"}
+var gpubox = domain.Host{Name: "gpubox", SSH: "you@gpubox.test"}
 
 func TestLocalServicesOpenDirectlyWithoutSSH(t *testing.T) {
 	tunnels, log := tunnelFixture(t)
@@ -96,7 +96,7 @@ func TestLocalServicesOpenDirectlyWithoutSSH(t *testing.T) {
 		{"::", "http://[::1]:3000/"},
 		{"127.0.0.1", "http://127.0.0.1:3000/"},
 		{"::ffff:127.0.0.1", "http://127.0.0.1:3000/"},
-		{"192.168.1.20", "http://192.168.1.20:3000/"},
+		{"192.0.2.20", "http://192.0.2.20:3000/"},
 	} {
 		f, err := tunnels.Open(context.Background(), domain.Host{Name: "local"}, domain.Service{Host: "local", Address: tc.address, Port: 3000})
 		if err != nil || f.URL != tc.url || !f.Direct {
@@ -116,18 +116,18 @@ func TestLocalServicesOpenDirectlyWithoutSSH(t *testing.T) {
 func TestRemoteTunnelSharesOneConnectionAndPrefersTheSamePort(t *testing.T) {
 	tunnels, log := tunnelFixture(t)
 	port, other := freePort(t), freePort(t)
-	first, err := tunnels.Open(context.Background(), spark, remoteService(port))
+	first, err := tunnels.Open(context.Background(), gpubox, remoteService(port))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.Direct || first.LocalPort != port || first.URL != "http://127.0.0.1:"+strconv.Itoa(port)+"/" || first.Remote != "127.0.0.1:"+strconv.Itoa(port) {
 		t.Fatalf("unexpected forward: %+v", first)
 	}
-	again, err := tunnels.Open(context.Background(), spark, remoteService(port))
+	again, err := tunnels.Open(context.Background(), gpubox, remoteService(port))
 	if err != nil || again != first {
 		t.Fatalf("reopen should reuse the forward: %+v %v", again, err)
 	}
-	if _, err := tunnels.Open(context.Background(), spark, domain.Service{Host: "spark", Address: "::", Port: other, Family: "IPv6"}); err != nil {
+	if _, err := tunnels.Open(context.Background(), gpubox, domain.Service{Host: "gpubox", Address: "::", Port: other, Family: "IPv6"}); err != nil {
 		t.Fatal(err)
 	}
 	masters := calls(t, log, isMaster)
@@ -139,7 +139,7 @@ func TestRemoteTunnelSharesOneConnectionAndPrefersTheSamePort(t *testing.T) {
 			t.Fatalf("master missing %s: %q", want, masters[0])
 		}
 	}
-	if masters[0][len(masters[0])-2] != "--" || masters[0][len(masters[0])-1] != spark.SSH {
+	if masters[0][len(masters[0])-2] != "--" || masters[0][len(masters[0])-1] != gpubox.SSH {
 		t.Fatalf("destination must follow --: %q", masters[0])
 	}
 	forwards := calls(t, log, isOp("forward"))
@@ -157,11 +157,11 @@ func TestTunnelManagersKeepSeparateSockets(t *testing.T) {
 	second.controlDir = first.controlDir
 	t.Cleanup(func() { second.Close() })
 	for _, tunnels := range []*Tunnels{first, second} {
-		if _, err := tunnels.Open(context.Background(), spark, remoteService(freePort(t))); err != nil {
+		if _, err := tunnels.Open(context.Background(), gpubox, remoteService(freePort(t))); err != nil {
 			t.Fatal(err)
 		}
 	}
-	a, b := first.masters[spark.Name].path, second.masters[spark.Name].path
+	a, b := first.masters[gpubox.Name].path, second.masters[gpubox.Name].path
 	if a == b {
 		t.Fatalf("managers share a socket: %s", a)
 	}
@@ -206,7 +206,7 @@ func TestBusyLocalPortFallsBackToAnotherPort(t *testing.T) {
 	}
 	defer busy.Close()
 	port := busy.Addr().(*net.TCPAddr).Port
-	f, err := tunnels.Open(context.Background(), spark, remoteService(port))
+	f, err := tunnels.Open(context.Background(), gpubox, remoteService(port))
 	if err != nil || f.LocalPort == port || f.LocalPort == 0 {
 		t.Fatalf("expected a different local port: %+v %v", f, err)
 	}
@@ -214,7 +214,7 @@ func TestBusyLocalPortFallsBackToAnotherPort(t *testing.T) {
 	// A port taken after the check is retried rather than reported as open.
 	race := freePort(t)
 	t.Setenv("LHWATCH_TEST_BUSY", strconv.Itoa(race))
-	f, err = tunnels.Open(context.Background(), spark, remoteService(race))
+	f, err = tunnels.Open(context.Background(), gpubox, remoteService(race))
 	if err != nil || f.LocalPort == race {
 		t.Fatalf("expected retry on another port: %+v %v", f, err)
 	}
@@ -227,11 +227,11 @@ func TestBusyLocalPortFallsBackToAnotherPort(t *testing.T) {
 func TestClosingTunnelsCancelsForwardsAndEndsConnections(t *testing.T) {
 	tunnels, log := tunnelFixture(t)
 	a, b := freePort(t), freePort(t)
-	fa, err := tunnels.Open(context.Background(), spark, remoteService(a))
+	fa, err := tunnels.Open(context.Background(), gpubox, remoteService(a))
 	if err != nil {
 		t.Fatal(err)
 	}
-	fb, err := tunnels.Open(context.Background(), spark, remoteService(b))
+	fb, err := tunnels.Open(context.Background(), gpubox, remoteService(b))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestClosingTunnelsCancelsForwardsAndEndsConnections(t *testing.T) {
 	if cancels := calls(t, log, isOp("cancel")); len(cancels) != 1 || spec(cancels[0]) != "127.0.0.1:"+strconv.Itoa(a)+":127.0.0.1:"+strconv.Itoa(a) {
 		t.Fatalf("expected one cancel: %q", cancels)
 	}
-	master := tunnels.masters["spark"]
+	master := tunnels.masters["gpubox"]
 	if err := tunnels.CloseForward(fb); err != nil {
 		t.Fatal(err)
 	}
@@ -256,27 +256,27 @@ func TestClosingTunnelsCancelsForwardsAndEndsConnections(t *testing.T) {
 	}
 
 	// A dead connection is replaced on the next open.
-	if _, err := tunnels.Open(context.Background(), spark, remoteService(a)); err != nil {
+	if _, err := tunnels.Open(context.Background(), gpubox, remoteService(a)); err != nil {
 		t.Fatal(err)
 	}
-	tunnels.masters["spark"].cmd.Process.Kill()
-	<-tunnels.masters["spark"].done
+	tunnels.masters["gpubox"].cmd.Process.Kill()
+	<-tunnels.masters["gpubox"].done
 	if len(tunnels.Active()) != 0 {
 		t.Fatal("dead connection still listed")
 	}
-	if _, err := tunnels.Open(context.Background(), spark, remoteService(a)); err != nil {
+	if _, err := tunnels.Open(context.Background(), gpubox, remoteService(a)); err != nil {
 		t.Fatal(err)
 	}
 	if got := len(calls(t, log, isMaster)); got != 3 {
 		t.Fatalf("expected a fresh connection, got %d masters", got)
 	}
 
-	live := tunnels.masters["spark"]
+	live := tunnels.masters["gpubox"]
 	tunnels.Close()
 	if live.alive() {
 		t.Fatal("Close left a tunnel connection running")
 	}
-	if _, err := tunnels.Open(context.Background(), spark, remoteService(a)); err == nil {
+	if _, err := tunnels.Open(context.Background(), gpubox, remoteService(a)); err == nil {
 		t.Fatal("open after Close succeeded")
 	}
 }
@@ -284,7 +284,7 @@ func TestClosingTunnelsCancelsForwardsAndEndsConnections(t *testing.T) {
 func TestTunnelFailuresAreReported(t *testing.T) {
 	tunnels, _ := tunnelFixture(t)
 	t.Setenv("LHWATCH_TEST_MASTER_FAIL", "1")
-	_, err := tunnels.Open(context.Background(), spark, remoteService(freePort(t)))
+	_, err := tunnels.Open(context.Background(), gpubox, remoteService(freePort(t)))
 	if err == nil || !strings.Contains(err.Error(), "Permission denied") {
 		t.Fatalf("expected ssh error detail, got %v", err)
 	}
@@ -294,7 +294,7 @@ func TestTunnelFailuresAreReported(t *testing.T) {
 
 	unavailable := NewTunnels(time.Second)
 	unavailable.controlDir = ""
-	if _, err := unavailable.Open(context.Background(), spark, remoteService(8000)); err == nil {
+	if _, err := unavailable.Open(context.Background(), gpubox, remoteService(8000)); err == nil {
 		t.Fatal("remote tunnel without a private socket directory")
 	}
 	if _, err := unavailable.Open(context.Background(), domain.Host{Name: "bad", SSH: "-oProxyCommand=x"}, remoteService(8000)); err == nil {
