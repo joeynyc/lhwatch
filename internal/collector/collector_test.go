@@ -235,6 +235,13 @@ func TestDisposableListenerDiscoveryAndStop(t *testing.T) {
 		ipv6, ignore bool
 	}{{"ipv4", false, false}, {"ipv6", true, false}, {"ignores term", false, true}} {
 		t.Run(tc.name, func(t *testing.T) {
+			// A slow or user-owned local Docker daemon would rightly make
+			// stops fail closed; this test is about discovery and signaling,
+			// so keep the helper away from any real daemon.
+			isolated := t.TempDir()
+			t.Setenv("DOCKER_HOST", "unix://"+filepath.Join(isolated, "absent.sock"))
+			t.Setenv("XDG_RUNTIME_DIR", isolated)
+			t.Setenv("HOME", isolated)
 			cmd, port, done := disposableListener(t, tc.ipv6, tc.ignore)
 			c := New(15 * time.Second)
 			host := domain.Host{Name: "local"}
@@ -252,6 +259,9 @@ func TestDisposableListenerDiscoveryAndStop(t *testing.T) {
 			}
 			if found == nil {
 				t.Fatalf("disposable listener PID %d port %d not discovered", cmd.Process.Pid, port)
+			}
+			if !found.CanStop && strings.Contains(found.StopReason, "Docker") {
+				t.Skipf("a Docker daemon owned by this user makes stops fail closed: %s", found.StopReason)
 			}
 			if !found.CanStop || found.Identity == "" || found.Command == "" {
 				t.Fatalf("missing identity/metadata: %+v", found)
