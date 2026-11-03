@@ -1,0 +1,23 @@
+version: 2
+
+# Dependabot proposes weekly updates for Go modules and GitHub Actions.
+# Action pins are commit SHAs; Dependabot bumps the SHA and the trailing
+# version comment together in its pull requests.
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-patch:
+        update-types: [minor, patch]

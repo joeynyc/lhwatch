@@ -31,7 +31,8 @@ cross:
 PLATFORMS := linux/arm64 linux/amd64 darwin/arm64 darwin/amd64
 
 # Release archives and checksums in dist/release: make release VERSION=v0.1.0
-# Each archive holds lhwatch, the README, and the example configuration.
+# Each archive holds lhwatch, the README, the LICENSE, and the example
+# configuration.
 release:
 	@test -n "$(VERSION)" || { echo "usage: make release VERSION=vX.Y.Z" >&2; exit 2; }
 	rm -rf dist/release && mkdir -p dist/release
@@ -39,7 +40,7 @@ release:
 		os=$${platform%/*}; arch=$${platform#*/}; name=lhwatch_$(VERSION)_$${os}_$${arch}; \
 		mkdir -p dist/release/$$name; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath $(LDFLAGS) -o dist/release/$$name/lhwatch .; \
-		cp README.md lhwatch.example.json dist/release/$$name/; \
+		cp README.md LICENSE lhwatch.example.json dist/release/$$name/; \
 		tar --no-xattrs -czf dist/release/$$name.tar.gz -C dist/release $$name; \
 		rm -rf dist/release/$$name; \
 	done

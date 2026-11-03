@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -18,10 +20,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      # Shipped artifacts are built with the latest stable toolchain, not
+      # the go.mod floor, so releases carry current compiler and stdlib fixes.
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: go.mod
+          go-version: stable
       - run: make vet test
+      # Scan with the same toolchain that builds the release; vulnerability
+      # results follow the toolchain. Pinned version, bump deliberately.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - name: Build archives and checksums
         run: make release VERSION="$GITHUB_REF_NAME"
       - name: Check the packaged binary reports the tag
@@ -30,12 +38,18 @@ jobs:
           tar -xzf "dist/release/$name.tar.gz" -C "$RUNNER_TEMP"
           reported=$("$RUNNER_TEMP/$name/lhwatch" --version)
           test "$reported" = "lhwatch $GITHUB_REF_NAME" || { echo "got: $reported"; exit 1; }
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/release/*
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           notes="docs/releases/$GITHUB_REF_NAME.md"
           if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --generate-notes; fi
-          case "$GITHUB_REF_NAME" in *-*) set -- "$@" --prerelease ;; esac
+          # Anything after the leading v that is not digits and dots
+          # (v1.2.3-rc.1, v1.2.3rc1, ...) is a prerelease.
+          case "${GITHUB_REF_NAME#v}" in *[!0-9.]*) set -- "$@" --prerelease ;; esac
           gh release create "$GITHUB_REF_NAME" dist/release/*.tar.gz dist/release/SHA256SUMS \
             --title "lhwatch $GITHUB_REF_NAME" --verify-tag "$@"

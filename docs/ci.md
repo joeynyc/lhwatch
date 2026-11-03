@@ -19,6 +19,8 @@ The smoke test builds `lhwatch`, drives the real TUI in an isolated tmux session
 
 Actions are pinned to commit SHAs, with the release tag in a trailing comment. staticcheck and govulncheck are pinned to released versions. To upgrade one, change the SHA or version and its comment together, and check that staticcheck supports the Go version in `go.mod`.
 
+Dependabot (`.github/dependabot.yml`) proposes weekly updates for Go modules and GitHub Actions, grouping minor and patch updates. Its pull requests bump pinned action SHAs and their trailing version comments together.
+
 ## Releases
 
 To publish a release, add notes at `docs/releases/vX.Y.Z.md`, then push a matching tag:
@@ -27,7 +29,15 @@ To publish a release, add notes at `docs/releases/vX.Y.Z.md`, then push a matchi
 git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-`.github/workflows/release.yml` runs when you push a version tag such as `v0.2.0`. It runs vet and tests, builds the archives and `SHA256SUMS`, checks that the packaged Linux binary reports the tag, and publishes a GitHub release. Release notes come from `docs/releases/<tag>.md` when that file exists; otherwise GitHub generates them. A tag with a suffix, such as `v0.2.0-rc.1`, is published as a prerelease.
+`.github/workflows/release.yml` runs when you push a version tag such as `v0.2.0`. It builds with the latest stable Go toolchain rather than the `go.mod` floor, so shipped binaries carry current compiler and standard library fixes. It runs vet, tests, and govulncheck with that toolchain, builds the archives and `SHA256SUMS`, checks that the packaged Linux binary reports the tag, and publishes a GitHub release. Each archive contains the binary, `README.md`, `LICENSE`, and `lhwatch.example.json`.
+
+Every release asset, including `SHA256SUMS`, gets a signed build-provenance attestation from `actions/attest-build-provenance`. Verify an archive against it with:
+
+```sh
+gh attestation verify lhwatch_vX.Y.Z_linux_amd64.tar.gz --repo joeynyc/lhwatch
+```
+
+Release notes come from `docs/releases/<tag>.md` when that file exists; otherwise GitHub generates them. Any tag whose part after the leading `v` is not only digits and dots — `v0.2.0-rc.1`, `v1.2.3rc1` — is published as a prerelease.
 
 ## Hardware checks
 
