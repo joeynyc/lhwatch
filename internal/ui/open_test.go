@@ -19,6 +19,7 @@ type fakeForwarder struct {
 	active    []domain.Forward
 	openErr   error
 	browseErr error
+	closeErr  error
 }
 
 func (f *fakeForwarder) Open(_ context.Context, h domain.Host, s domain.Service) (domain.Forward, error) {
@@ -38,6 +39,9 @@ func (f *fakeForwarder) CloseForward(fw domain.Forward) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.closed = append(f.closed, fw)
+	if f.closeErr != nil {
+		return f.closeErr
+	}
 	f.active = nil
 	return nil
 }
@@ -126,6 +130,27 @@ func TestRemoteTunnelShownInDetailsAndClosable(t *testing.T) {
 	}
 	if _, cmd = apply(m, key("O")); cmd != nil {
 		t.Fatal("closing with no tunnel should do nothing")
+	}
+}
+
+func TestFailedTunnelCloseCanBeRetried(t *testing.T) {
+	fwd := &fakeForwarder{}
+	m := ready(t, &fakeBackend{}).WithForwarder(fwd)
+	m = selectService(t, m, "db")
+	m, cmd := apply(m, key("o"))
+	m, _ = apply(m, cmd())
+	fwd.closeErr = errors.New("cancel failed")
+	m, cmd = apply(m, key("O"))
+	m, _ = apply(m, cmd())
+	if !strings.HasPrefix(m.notice, "Tunnel close failed") {
+		t.Fatalf("failure not shown: %q", m.notice)
+	}
+	fwd.closeErr = nil
+	if m, cmd = apply(m, key("O")); cmd == nil {
+		t.Fatal("O must retry a tunnel whose close failed")
+	}
+	if m, _ = apply(m, cmd()); len(fwd.closed) != 2 || !strings.HasPrefix(m.notice, "Closed tunnel") {
+		t.Fatalf("retry did not close: %+v %q", fwd.closed, m.notice)
 	}
 }
 

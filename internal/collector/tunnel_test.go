@@ -35,6 +35,9 @@ spec = args[args.index('-L') + 1]
 if op == 'forward' and spec.split(':')[1] in os.environ.get('LHWATCH_TEST_BUSY', '').split(','):
     sys.stderr.write('mux_client_forward: forwarding request failed: Port forwarding failed')
     sys.exit(255)
+if op == 'cancel' and os.environ.get('LHWATCH_TEST_CANCEL_FAIL'):
+    sys.stderr.write('mux_client_request_stop_listening: cancel failed')
+    sys.exit(255)
 `
 
 func tunnelFixture(t *testing.T) (*Tunnels, string) {
@@ -221,6 +224,28 @@ func TestBusyLocalPortFallsBackToAnotherPort(t *testing.T) {
 	attempts := calls(t, log, isOp("forward"))
 	if len(attempts) != 3 || !strings.HasPrefix(spec(attempts[1]), "127.0.0.1:"+strconv.Itoa(race)+":") {
 		t.Fatalf("unexpected attempts: %q", attempts)
+	}
+}
+
+func TestFailedCancelKeepsTheForwardListed(t *testing.T) {
+	tunnels, _ := tunnelFixture(t)
+	fa, err := tunnels.Open(context.Background(), gpubox, remoteService(freePort(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tunnels.Open(context.Background(), gpubox, remoteService(freePort(t))); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LHWATCH_TEST_CANCEL_FAIL", "1")
+	if err := tunnels.CloseForward(fa); err == nil {
+		t.Fatal("a failed cancel must be reported")
+	}
+	if active := tunnels.Active(); len(active) != 2 {
+		t.Fatalf("a forward that may still listen must stay listed: %+v", active)
+	}
+	t.Setenv("LHWATCH_TEST_CANCEL_FAIL", "")
+	if err := tunnels.CloseForward(fa); err != nil || len(tunnels.Active()) != 1 {
+		t.Fatalf("retrying the close should succeed: %v %+v", err, tunnels.Active())
 	}
 }
 

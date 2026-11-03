@@ -160,6 +160,9 @@ func (t *Tunnels) Open(ctx context.Context, host domain.Host, s domain.Service) 
 		t.mu.Unlock()
 		return f, nil
 	}
+	if lastErr == nil {
+		lastErr = errors.New("no free local port on 127.0.0.1")
+	}
 	return domain.Forward{}, fmt.Errorf("%s: could not forward %s: %w", host.Name, remote, lastErr)
 }
 
@@ -325,6 +328,7 @@ func (t *Tunnels) CloseForward(f domain.Forward) error {
 		t.mu.Unlock()
 		return nil
 	}
+	saved := m.forwards[f.Remote]
 	delete(m.forwards, f.Remote)
 	last := len(m.forwards) == 0
 	if last {
@@ -337,7 +341,17 @@ func (t *Tunnels) CloseForward(f domain.Forward) error {
 	}
 	host, portText, _ := net.SplitHostPort(f.Remote)
 	port, _ := strconv.Atoi(portText)
-	return t.control(context.Background(), m, "cancel", forwardSpec(f.LocalPort, netip.MustParseAddr(host), port))
+	if err := t.control(context.Background(), m, "cancel", forwardSpec(f.LocalPort, netip.MustParseAddr(host), port)); err != nil {
+		// The forward may still be listening: keep it listed so it can be
+		// retried, and so Close still ends it with its connection.
+		t.mu.Lock()
+		if t.masters[f.Host] == m {
+			m.forwards[f.Remote] = saved
+		}
+		t.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // Active lists forwards on live connections, ordered by host and endpoint.

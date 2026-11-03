@@ -93,10 +93,11 @@ func (m *Model) closeSelectedForward() tea.Cmd {
 		m.notice = "No tunnel is open for this service."
 		return nil
 	}
-	delete(m.forwards, forwardKey(openTarget(g)))
+	k := forwardKey(openTarget(g))
+	delete(m.forwards, k)
 	m.notice = "Closing tunnel " + clean(f.URL) + "…"
 	forwarder := m.forwarder
-	return func() tea.Msg { return closeForwardMsg{forward: f, err: forwarder.CloseForward(f)} }
+	return func() tea.Msg { return closeForwardMsg{key: k, forward: f, err: forwarder.CloseForward(f)} }
 }
 
 func describeForward(f domain.Forward) string {

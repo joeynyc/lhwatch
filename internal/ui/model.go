@@ -51,6 +51,7 @@ type openMsg struct {
 }
 
 type closeForwardMsg struct {
+	key     string
 	forward domain.Forward
 	err     error
 }
@@ -227,6 +228,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case closeForwardMsg:
 		if msg.err != nil {
+			// The forward may still be open; keep it so O can retry.
+			m.forwards[msg.key] = msg.forward
 			m.notice = "Tunnel close failed: " + clean(msg.err.Error())
 		} else {
 			m.notice = "Closed tunnel " + describeForward(msg.forward)
