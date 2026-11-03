@@ -458,6 +458,12 @@ def launch_endpoint_label(argv, address, port, family):
 DOCKER_FORMAT = '''{"id":{{json .Id}},"name":{{json .Name}},"image":{{json .Config.Image}},"running":{{json .State.Running}},"network_mode":{{json .HostConfig.NetworkMode}},"pid_mode":{{json .HostConfig.PidMode}},"compose_project":{{json (index .Config.Labels "com.docker.compose.project")}},"compose_service":{{json (index .Config.Labels "com.docker.compose.service")}},"ports":{{json .NetworkSettings.Ports}},"path":{{json .Path}},"args":{{json .Args}}}'''
 DOCKER_BUDGET = 1.8
 DOCKER_LIMIT = 64
+# Processes that forward published container ports on the host. Stopping one
+# breaks container networking, so they are refused whatever their owner. Linux
+# truncates process names to 15 characters, so the truncated forms match too.
+PORT_PROXIES = {'docker-proxy', 'rootlesskit', 'rootlessport', 'slirp4netns', 'pasta', 'passt', 'gvproxy',
+                'vpnkit', 'com.docker.backend', 'com.docker.vpnkit'}
+PORT_PROXIES |= {name[:15] for name in PORT_PROXIES}
 
 # Host networking shares /proc/net, so that table alone proves nothing. Only
 # socket inodes actually held by processes in the container's private PID
@@ -520,25 +526,36 @@ if __name__ == '__main__':
 '''
 
 
+def docker_socket(path, own=False):
+    try:
+        info = os.stat(path)
+    except OSError:
+        return False
+    return stat.S_ISSOCK(info.st_mode) and (not own or info.st_uid == os.getuid())
+
+
 def docker_endpoint():
-    """Choose a local Unix socket, never an ambient remote Docker context."""
-    if not shutil.which('docker'):
-        return '', ''
+    """Choose a local Unix socket, never an ambient remote Docker context.
+
+    Returns ('', reason) when no local daemon this user owns can exist, and
+    (None, reason) when one does but cannot be inspected: a rootless daemon's
+    port proxies run as this user, so callers must then refuse to stop.
+    """
     configured = os.environ.get('DOCKER_HOST', '')
-    if configured and not configured.startswith('unix:///'):
-        return '', 'Docker details unavailable: configured Docker endpoint is not a local Unix socket'
-    candidates = ([configured[7:]] if configured else [
-        '/var/run/docker.sock',
-        os.path.join(os.environ.get('XDG_RUNTIME_DIR', '/run/user/%d' % os.getuid()), 'docker.sock'),
-        os.path.expanduser('~/.docker/run/docker.sock'),
-    ])
-    for path in candidates:
-        try:
-            if stat.S_ISSOCK(os.stat(path).st_mode):
-                return 'unix://' + path, ''
-        except OSError:
-            continue
-    return '', ('Docker details unavailable: configured local socket is unavailable' if configured else '')
+    local = configured[7:] if configured.startswith('unix:///') else ''
+    defaults = ['/var/run/docker.sock',
+                os.path.join(os.environ.get('XDG_RUNTIME_DIR', '/run/user/%d' % os.getuid()), 'docker.sock'),
+                os.path.expanduser('~/.docker/run/docker.sock')]
+    owned = any(docker_socket(path, own=True) for path in [local] + defaults if path)
+    unusable = None if owned else ''
+    if not shutil.which('docker'):
+        return unusable, ('Docker details unavailable: a Docker socket exists but the docker CLI was not found' if owned else '')
+    if configured and not local:
+        return unusable, 'Docker details unavailable: configured Docker endpoint is not a local Unix socket'
+    for path in [local] if configured else defaults:
+        if docker_socket(path):
+            return 'unix://' + path, ''
+    return unusable, ('Docker details unavailable: configured local socket is unavailable' if configured else '')
 
 
 def docker_command(endpoint, args, deadline):
@@ -567,6 +584,8 @@ def docker_enrich(services, budget=DOCKER_BUDGET, host_network=True):
     bindings, which is enough to protect processes that proxy container ports.
     """
     endpoint, reason = docker_endpoint()
+    if endpoint is None:
+        refuse_unverified_proxies(services)
     if not endpoint:
         return [reason] if reason else []
     if budget <= 0:
@@ -747,7 +766,9 @@ def scan(include_docker=True, timeout_seconds=None, docker_host_network=True):
         service['user'] = username(uid)
         # Naming depends only on the directory and executable, so processes
         # sharing them share one metadata walk regardless of arguments.
-        project_key = (service.get('cwd', ''), service.pop('_executable', ''))
+        executable = service.pop('_executable', '')
+        proxy = PORT_PROXIES & {os.path.basename(service.get('name', '')), os.path.basename(executable)}
+        project_key = (service.get('cwd', ''), executable)
         if project_key not in projects:
             projects[project_key] = project_info(project_key[0], executable=project_key[1], metadata=metadata)
         service.update(projects[project_key])
@@ -768,6 +789,8 @@ def scan(include_docker=True, timeout_seconds=None, docker_host_network=True):
             reason = 'Protected system or ancestor process'
         elif uid != os.getuid():
             reason = 'Process belongs to another user'
+        elif proxy:
+            reason = 'Container runtime port forwarder; stop the container with its container manager'
         elif container_process is None:
             reason = 'Container membership could not be verified'
         elif not service.get('identity'):

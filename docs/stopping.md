@@ -23,9 +23,10 @@ Stopping fails closed: unknown, unreadable, ambiguous, or incomplete evidence di
 ### Docker and containers
 
 - Container groups do not offer process stopping, because a container can contain several processes and have its own lifecycle manager.
+- Processes that forward container ports to the host, such as `docker-proxy`, `rootlesskit`, `rootlessport`, `slirp4netns`, `pasta`, `gvproxy`, and Docker Desktop's backend, are never stopped, whoever owns them.
 - When Docker is reachable, the collector also rechecks published port bindings. It refuses a process that forwards ports for a container, such as a rootless Docker port proxy, or whose container ownership is ambiguous.
 - If listing Docker's containers times out, or they cannot all be inspected (more than 64 are running, including paused ones, or the scan time limit is reached), ordinary processes are not stoppable until a complete inventory is available.
-- A Docker daemon you cannot access at all does not block stopping.
+- A Docker daemon you cannot access at all does not block stopping. A Docker socket you own that cannot be inspected does: for example, when the `docker` CLI is missing or `DOCKER_HOST` points at another machine.
 - On Linux, a process whose container membership cannot be read is refused.
 
 How containers are recognized is described in [naming.md](naming.md).

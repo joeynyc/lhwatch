@@ -356,6 +356,43 @@ class DockerProbeAndTransport(unittest.TestCase):
             self.assertTrue(warnings)
             command.assert_not_called()
 
+    def test_uninspectable_owned_daemon_refuses_ordinary_stops(self):
+        # A rootless daemon's socket and port proxies belong to this user.
+        owned = lambda path, own=False: path.endswith('docker.sock')
+        cases = [(None, {}), ('/usr/bin/docker', {'DOCKER_HOST': 'ssh://remote'})]
+        for cli, env in cases:
+            with self.subTest(cli=cli, env=env), patch.object(h.shutil, 'which', return_value=cli), patch.dict(h.os.environ, env), patch.object(h, 'docker_socket', side_effect=owned), patch.object(h, 'docker_command') as command:
+                endpoint, reason = h.docker_endpoint()
+                self.assertIsNone(endpoint)
+                self.assertTrue(reason)
+                service = listener(pid=400, identity='boot:400:1', can_stop=True)
+                self.assertTrue(h.docker_enrich([service]))
+                self.assertFalse(service['can_stop'])
+                command.assert_not_called()
+
+    def test_absent_daemon_keeps_ordinary_stops(self):
+        with patch.object(h.shutil, 'which', return_value=None), patch.object(h, 'docker_socket', return_value=False):
+            self.assertEqual(h.docker_endpoint(), ('', ''))
+            service = listener(pid=400, identity='boot:400:1', can_stop=True)
+            self.assertEqual(h.docker_enrich([service]), [])
+            self.assertTrue(service['can_stop'])
+
+    def test_container_port_forwarders_are_never_stoppable(self):
+        uid = os.getuid()
+        raws = [listener(pid=900010, uid=uid, identity='linux:boot:10', port=18010, name='rootlessport'),
+                listener(pid=900011, uid=uid, identity='linux:boot:11', port=18011, name='com.docker.back'),
+                listener(pid=900012, uid=uid, identity='linux:boot:12', port=18012, name='exe', _executable='/usr/bin/slirp4netns'),
+                listener(pid=900013, uid=uid, identity='linux:boot:13', port=18013, name='python3')]
+        with patch.object(h.sys, 'platform', 'linux'), patch.object(h, 'linux_scan', side_effect=lambda: ([dict(r) for r in raws], [])), patch.object(h, 'protected_pids', return_value={0, 1}), patch.object(h, 'docker_endpoint', return_value=('', '')), patch.object(h, 'open_pidfd', return_value=None), patch.object(h.os, 'kill') as kill:
+            services = {s['port']: s for s in h.scan()['services']}
+            for port in (18010, 18011, 18012):
+                self.assertFalse(services[port]['can_stop'])
+                self.assertIn('port forwarder', services[port]['stop_reason'])
+            self.assertTrue(services[18013]['can_stop'])
+            target = {k: raws[0][k] for k in ['pid', 'identity', 'address', 'port', 'family']}
+            self.assertFalse(h.stop(target)['sent'])
+            kill.assert_not_called()
+
     def test_configured_socket_must_be_a_real_unix_socket(self):
         with tempfile.TemporaryDirectory() as root:
             path = str(Path(root) / 'docker.sock')

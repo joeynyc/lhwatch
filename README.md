@@ -115,7 +115,7 @@ Pressing `x` opens a confirmation that names the machine, process, PID, and its 
 
 - **SIGTERM only.** There is no automatic SIGKILL or process-tree termination. "Requested" means the signal was sent. A process may ignore it or be restarted by its supervisor.
 - **Revalidated first.** Before signaling, the collector rechecks the process's identity, ownership, and selected listener on that machine. It refuses unknown, stale, changed, protected, or foreign-user targets.
-- **Containers are never stopped.** Processes in Docker, Podman, containerd, CRI-O, Kubernetes, and LXC containers are recognized and refused. Stop those with their own tooling.
+- **Containers are never stopped.** Processes in Docker, Podman, containerd, CRI-O, Kubernetes, and LXC containers are recognized and refused, and so are the processes that forward container ports to the host. Stop those with their own tooling.
 - **Missing evidence means refusal.** Unreadable, ambiguous, or incomplete information disables stopping and records a reason.
 - **Lost responses are not guesses.** If a response is lost, the outcome is shown as unknown and the host is refreshed.
 - **PID reuse.** Linux uses a pidfd when available to bind the signal to one process incarnation. macOS and fallback Linux signaling keep a small check-to-signal race.
