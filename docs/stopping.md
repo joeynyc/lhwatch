@@ -18,6 +18,8 @@ A port belongs to a process. Stopping that process can close **all of its listen
 
 Before signaling, the collector checks the process's identity, ownership, and selected listener again on that machine. It refuses unknown, stale, changed, protected, or foreign-user targets.
 
+Pressing `y` first rechecks the target against the latest observation in the dashboard: if that exact endpoint is gone, or is no longer stoppable, no request is sent and the reason is shown.
+
 Stopping fails closed: unknown, unreadable, ambiguous, or incomplete evidence disables it, with a stated reason.
 
 ### Docker and containers

@@ -1,9 +1,6 @@
 package ui
 
-import (
-	tea "charm.land/bubbletea/v2"
-	"github.com/joeynyc/lhwatch/internal/domain"
-)
+import tea "charm.land/bubbletea/v2"
 
 // Keyboard handling for the dashboard, its dialogs, and search.
 
@@ -31,7 +28,11 @@ func (m Model) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.confirm = nil
 			// The target is about to go away; return to the list, not its details.
 			m.detail = false
-			if reason := m.stopUnavailable(serviceGroup{service: c.service, endpoints: []domain.Service{c.service}}); reason != "" {
+			reason := "This process or endpoint changed since you reviewed it. Press x to review it again."
+			if g, ok := m.latestTarget(c.service); ok {
+				reason = m.stopUnavailable(g)
+			}
+			if reason != "" {
 				m.notice = "Stop unavailable: " + reason
 				m.scroll = 0
 				return m, nil

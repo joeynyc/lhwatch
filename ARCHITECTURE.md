@@ -42,7 +42,7 @@ lhwatch is a Go terminal UI that runs one small Python collector on each monitor
 The UI groups endpoints for display, but a stop always targets one exact endpoint and process incarnation:
 
 1. `x` opens a confirmation listing every endpoint of that process. The target is frozen at that moment; later refreshes cannot retarget it.
-2. On `y`, the UI rechecks eligibility against the latest observation. Stale hosts and container groups are refused.
+2. On `y`, the UI looks the frozen endpoint up in the latest observation (`latestTarget`) and judges it with every current endpoint of that process. A missing endpoint, a stale host, current container evidence, or a current `can_stop=false` refuses.
 3. The helper's `stop()` rechecks ancestry, then (on Linux) opens a pidfd, rescans the host including Docker published-port bindings, and requires PID, identity, address, port, and family to match, with the same user and `can_stop` still true. Only then does it send **SIGTERM**: through the pidfd when available, otherwise `kill()`, which leaves a small PID-reuse race. There is no SIGKILL.
 4. A result means "signal sent", not "process exited"; the next scan shows what happened.
 

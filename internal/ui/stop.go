@@ -1,8 +1,34 @@
 package ui
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/joeynyc/lhwatch/internal/domain"
+)
 
 // Stop eligibility and the stop confirmation.
+
+// latestTarget finds a frozen stop target in the host's latest observation,
+// with every endpoint of that process incarnation, so a confirmation is judged
+// on current evidence. It reports false when the exact endpoint is gone.
+func (m Model) latestTarget(target domain.Service) (serviceGroup, bool) {
+	for _, h := range m.hosts {
+		if h.host.Name != target.Host {
+			continue
+		}
+		g := serviceGroup{}
+		for _, s := range h.snapshot.Services {
+			if s.Key() == target.Key() {
+				g.service = s
+			}
+			if s.PID == target.PID && s.Identity == target.Identity {
+				g.endpoints = append(g.endpoints, s)
+			}
+		}
+		return g, g.service.Key() == target.Key()
+	}
+	return serviceGroup{}, false
+}
 
 func (m Model) stopUnavailable(g serviceGroup) string {
 	if g.container() {

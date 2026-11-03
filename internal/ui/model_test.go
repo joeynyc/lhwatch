@@ -161,7 +161,7 @@ func TestStopCancelAndFrozenTargetConfirmedOnce(t *testing.T) {
 	m, _ = apply(m, key("r")) // modal must not interpret dashboard shortcuts
 	m.hosts[0].generation++
 	m.hosts[0].inflight = true
-	m, _ = apply(m, scanMsg{index: 0, generation: m.hosts[0].generation, snapshot: domain.Snapshot{CollectedAt: time.Now(), Services: []domain.Service{service("local", "replacement", 99, 3000)}}})
+	m, _ = apply(m, scanMsg{index: 0, generation: m.hosts[0].generation, snapshot: domain.Snapshot{CollectedAt: time.Now(), Services: []domain.Service{service("local", "replacement", 99, 3000), frozen}}})
 	var cmd tea.Cmd
 	m, cmd = apply(m, key("y"))
 	if cmd == nil {
@@ -179,6 +179,39 @@ func TestStopCancelAndFrozenTargetConfirmedOnce(t *testing.T) {
 		t.Fatal("UI claims exit without observation")
 	}
 }
+
+func TestConfirmationIsJudgedOnTheLatestObservation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(domain.Service) []domain.Service
+		reason string
+	}{
+		{"endpoint gone", func(domain.Service) []domain.Service {
+			return []domain.Service{service("local", "replacement", 99, 3000)}
+		}, "changed since you reviewed it"},
+		{"now ineligible", func(s domain.Service) []domain.Service {
+			s.CanStop, s.StopReason = false, "Docker inventory incomplete; process may forward container ports"
+			return []domain.Service{s}
+		}, "Docker inventory incomplete"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &fakeBackend{}
+			m := ready(t, backend)
+			m, _ = apply(m, key("x"))
+			if m.confirm == nil {
+				t.Fatal("fixture did not open a confirmation")
+			}
+			m.hosts[0].generation++
+			m.hosts[0].inflight = true
+			m, _ = apply(m, scanMsg{index: 0, generation: m.hosts[0].generation, snapshot: domain.Snapshot{CollectedAt: time.Now(), Services: tc.change(m.confirm.service)}})
+			m, cmd := apply(m, key("y"))
+			if cmd != nil || backend.stops != 0 || !strings.Contains(m.notice, tc.reason) {
+				t.Fatalf("stop dispatched or wrong reason: %q", m.notice)
+			}
+		})
+	}
+}
+
 func TestUnsafeStopDisabled(t *testing.T) {
 	for _, kind := range []string{"stale", "unavailable", "identity", "permission"} {
 		t.Run(kind, func(t *testing.T) {
