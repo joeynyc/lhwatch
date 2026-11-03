@@ -23,6 +23,21 @@ lhwatch --host devbox=you@devbox --host gpu=you@gpu-box
 - Authentication is noninteractive and host-key checking is strict. lhwatch never prompts for a password, accepts an unknown server key, installs a daemon, or changes your SSH configuration.
 - Keep password-protected keys loaded in your SSH agent.
 
+### If a host fails to connect
+
+A failed host keeps its last observation, marked stale. Press `e` to see the exact error, which comes from `ssh` itself. To reproduce it outside lhwatch, run the same kind of connection:
+
+```sh
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes you@devbox true
+```
+
+Common causes:
+
+- **Host key not yet trusted.** Connect once interactively with `ssh you@devbox` and accept the key.
+- **Key not loaded.** A passphrase-protected key must be in your agent: run `ssh-add`.
+- **No `python3` on the host.** Each monitored machine needs Python 3.9 or later on the `PATH` of a non-interactive SSH session.
+- **Slow host.** Raise `timeout_seconds` in the config file (up to 60) or pass `--timeout`.
+
 ## Running the dashboard on a Linux host
 
 Install the matching binary on the host, or build one with `make cross`. That target writes `dist/lhwatch-linux-arm64`, `dist/lhwatch-linux-amd64`, and the macOS binaries. Run it from a terminal on that host. Its local view then describes that machine.

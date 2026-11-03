@@ -16,7 +16,7 @@ See named services and their ports, filter across machines, inspect a process, a
 - **Python 3.9+** (`python3`) on every monitored machine, local and SSH. lhwatch runs a short-lived collector there; nothing is installed.
 - **macOS** hosts use the system `lsof` and `ps`. **Linux** hosts use `/proc`.
 - **Remote hosts** are reached with your existing OpenSSH client, keys, agent, and SSH configuration.
-- **Go 1.26+** only to build from source or run `go install`. Release binaries are static and need nothing beyond a terminal.
+- **Go 1.26+** only to build from source or run `go install`. Release binaries are self-contained and need nothing beyond a terminal.
 
 ## Install
 
@@ -24,7 +24,7 @@ See named services and their ports, filter across machines, inspect a process, a
 
 ```sh
 gh release download --repo joeynyc/lhwatch --pattern '*darwin_arm64.tar.gz' --pattern SHA256SUMS
-shasum -a 256 --check --ignore-missing SHA256SUMS
+shasum -a 256 --check --ignore-missing SHA256SUMS   # on Linux: sha256sum --check --ignore-missing SHA256SUMS
 ```
 
 Extract the archive and move `lhwatch` onto your `PATH`.
@@ -136,7 +136,7 @@ lhwatch --demo --json
 - A host whose scan failed has an `error` and empty `services`. It omits `collected_at` and `platform` rather than reporting placeholder values.
 - One record is kept per endpoint. Optional fields carry container attribution (`container_id`, `container_name`, `container_image`, `visibility_reason`) and purpose evidence (`endpoint_label`, `endpoint_label_source`); they are omitted when unknown.
 - Partial visibility is reported through `partial` and warnings.
-- Process command lines and paths can contain private information. Review snapshots before sharing them.
+- Process command lines, paths, and hostnames can contain private information. Review snapshots before sharing them.
 
 | Exit code | Meaning |
 | --- | --- |
