@@ -247,7 +247,7 @@ func (c *Collector) Scan(ctx context.Context, host domain.Host) (domain.Snapshot
 
 func (c *Collector) Stop(ctx context.Context, host domain.Host, service domain.Service) (domain.StopResult, error) {
 	if service.ContainerID != "" {
-		return domain.StopResult{}, fmt.Errorf("use Docker to stop this container; container controls are unavailable in LHWatch")
+		return domain.StopResult{}, fmt.Errorf("use Docker to stop this container; container controls are unavailable in lhwatch")
 	}
 	target := &domain.StopRequest{PID: service.PID, Identity: service.Identity, Address: service.Address, Port: service.Port, Family: service.Family}
 	if service.Host != host.Name {

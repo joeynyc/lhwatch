@@ -14,6 +14,19 @@ func TestMissingOptionalConfigIsLocal(t *testing.T) {
 	}
 }
 
+func TestDefaultPathIgnoresRelativeXDGConfigHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "relative/dir")
+	if got, want := DefaultPath(), filepath.Join(home, ".config", "lhwatch", "config.json"); got != want {
+		t.Fatalf("DefaultPath() = %q, want %q", got, want)
+	}
+	t.Setenv("XDG_CONFIG_HOME", "/abs/xdg")
+	if got := DefaultPath(); got != filepath.Join("/abs/xdg", "lhwatch", "config.json") {
+		t.Fatalf("absolute XDG_CONFIG_HOME ignored: %q", got)
+	}
+}
+
 func TestConfigAndFlags(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(p, []byte(`{"refresh_seconds":4,"hosts":[{"name":"lab","ssh":"user@gpubox"}]}`), 0600); err != nil {

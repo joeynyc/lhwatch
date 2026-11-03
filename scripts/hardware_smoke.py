@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Verify configured Linux SSH hosts using disposable, self-cleaning listeners.
 
-Requires an existing LHWatch config, working noninteractive SSH, and tmux.
+Requires an existing lhwatch config, working noninteractive SSH, and tmux.
 Uses existing SSH credentials and known-host trust without modifying either.
 """
 import argparse
@@ -178,7 +178,7 @@ def check_host(binary, config, host, env, mode):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', type=Path, required=True, help='Existing LHWatch config JSON')
+    parser.add_argument('--config', type=Path, required=True, help='Existing lhwatch config JSON')
     parser.add_argument('--binary', type=Path, default=ROOT / 'bin/lhwatch')
     args = parser.parse_args()
     if not shutil.which('tmux'):

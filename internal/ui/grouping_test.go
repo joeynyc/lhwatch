@@ -190,14 +190,14 @@ func TestContainerSearchAndFilteredEndpoints(t *testing.T) {
 	a := service("local", "unknown", 0, 8000)
 	a.Identity = ""
 	a.ContainerID, a.ContainerName, a.ContainerImage, a.Project = "container-a", "qwen-service", "vllm:demo", "My AI Server"
-	a.CanStop = false
+	a.CanStop, a.StopReason = false, "Container-managed service; stop it with its container manager"
 	b := a
 	b.Address, b.Family = "::1", "IPv6"
 	c := a
-	c.Port = 8001
+	c.Port, c.EndpointLabel = 8001, "Model API"
 	m.hosts[0].snapshot.Services = []domain.Service{a, b, c}
 	m.hosts[1].snapshot.Services = nil
-	for _, query := range []string{"container-a", "qwen-service", "vllm:demo", "8001", "::1"} {
+	for _, query := range []string{"container-a", "qwen-service", "vllm:demo", "8001", "::1", "model api", "container manager"} {
 		m.filter = query
 		m.reconcile()
 		rows := m.groups()

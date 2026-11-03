@@ -48,7 +48,7 @@ def container_stop_refused(screen):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True)
-    parser.add_argument('--host', required=True, help='Configured LHWatch display name')
+    parser.add_argument('--host', required=True, help='Configured lhwatch display name')
     parser.add_argument('--image', required=True, help='Cached image with python3; never pulled')
     parser.add_argument('--binary', type=Path, default=ROOT / 'bin/lhwatch')
     args = parser.parse_args()

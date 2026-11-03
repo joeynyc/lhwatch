@@ -24,7 +24,8 @@ func (c Config) Interval() time.Duration { return time.Duration(c.RefreshSeconds
 func (c Config) Timeout() time.Duration  { return time.Duration(c.TimeoutSeconds) * time.Second }
 
 func DefaultPath() string {
-	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
+	// The XDG spec says a relative XDG_CONFIG_HOME is invalid and ignored.
+	if dir := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(dir) {
 		return filepath.Join(dir, "lhwatch", "config.json")
 	}
 	home, err := os.UserHomeDir()

@@ -146,7 +146,7 @@ func (m Model) ensureGroups() *groupCache {
 		c.search = make([][]string, len(c.all))
 		for i, g := range c.all {
 			for _, s := range g.endpoints {
-				text := fmt.Sprintf("%s %s %s %s %s %s %d %d %s %s %s %s %s %s", s.Host, s.Name, s.Command, s.Cwd, s.User, s.Address, s.Port, s.PID, s.Family, s.Project, s.ProjectPath, s.ContainerID, s.ContainerName, s.ContainerImage)
+				text := fmt.Sprintf("%s %s %s %s %s %s %d %d %s %s %s %s %s %s %s %s", s.Host, s.Name, s.Command, s.Cwd, s.User, s.Address, s.Port, s.PID, s.Family, s.Project, s.ProjectPath, s.ContainerID, s.ContainerName, s.ContainerImage, s.EndpointLabel, s.StopReason)
 				c.search[i] = append(c.search[i], strings.ToLower(clean(text)))
 			}
 		}
