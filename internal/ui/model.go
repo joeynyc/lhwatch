@@ -256,6 +256,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateWheel(tea.Mouse(msg))
 	case tea.KeyPressMsg:
 		return m.updateKey(msg)
+	case tea.PasteMsg:
+		if m.searching {
+			m.filter += clean(msg.String())
+			m.reconcile()
+		}
 	}
 	return m, nil
 }

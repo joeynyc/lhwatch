@@ -95,6 +95,54 @@ func TestSearchSelectionAcrossRefresh(t *testing.T) {
 		}
 	}
 }
+
+func TestPastedTextFiltersSearch(t *testing.T) {
+	m := ready(t, &fakeBackend{})
+	m, _ = apply(m, key("/"))
+	m, _ = apply(m, tea.PasteMsg{})
+	if m.filter != "" {
+		t.Fatalf("empty paste changed search: filter = %q", m.filter)
+	}
+	m, _ = apply(m, key("a"))
+	m, _ = apply(m, tea.PasteMsg{Content: "pi"})
+	if m.filter != "api" {
+		t.Fatalf("typed and pasted search text: filter = %q, want %q", m.filter, "api")
+	}
+	m, _ = apply(m, tea.PasteMsg{})
+	if m.filter != "api" {
+		t.Fatalf("empty paste changed existing search: filter = %q, want %q", m.filter, "api")
+	}
+	if groups := m.groups(); len(groups) != 1 || groups[0].service.Name != "api" {
+		t.Fatalf("typed and pasted search text did not filter to api: got %v groups", len(groups))
+	}
+}
+
+func TestPasteOutsideSearchDoesNotTriggerHotkeys(t *testing.T) {
+	m := ready(t, &fakeBackend{})
+	for _, content := range []string{"q", "r"} {
+		var cmd tea.Cmd
+		m, cmd = apply(m, tea.PasteMsg{Content: content})
+		if cmd != nil {
+			t.Fatalf("pasting hotkey text %q returned a command", content)
+		}
+		if m.searching || m.filter != "" {
+			t.Fatalf("pasting hotkey text %q changed search state: searching=%v filter=%q", content, m.searching, m.filter)
+		}
+	}
+}
+
+func TestPastedTextIsSanitized(t *testing.T) {
+	m := ready(t, &fakeBackend{})
+	m, _ = apply(m, key("/"))
+	m, _ = apply(m, tea.PasteMsg{Content: "\x1b[31ma\x00pi\x1b[0m"})
+	if m.filter != "api" {
+		t.Fatalf("sanitized pasted search text: filter = %q, want %q", m.filter, "api")
+	}
+	if groups := m.groups(); len(groups) != 1 || groups[0].service.Name != "api" {
+		t.Fatalf("sanitized pasted search text did not filter to api: got %v groups", len(groups))
+	}
+}
+
 func TestHostFailureRetainsObservationAndIgnoresOldGeneration(t *testing.T) {
 	m := ready(t, &fakeBackend{})
 	m, _ = apply(m, key("r"))
