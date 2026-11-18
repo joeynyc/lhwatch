@@ -97,9 +97,17 @@ func (m Model) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			m.scrollBy(-1)
 		case "pgdown":
-			m.scrollBy(max(1, m.height-10))
+			page := max(1, m.height-10)
+			if m.detail {
+				page = m.detailPageSize()
+			}
+			m.scrollBy(page)
 		case "pgup":
-			m.scrollBy(-max(1, m.height-10))
+			page := max(1, m.height-10)
+			if m.detail {
+				page = m.detailPageSize()
+			}
+			m.scrollBy(-page)
 		}
 		return m, nil
 	}

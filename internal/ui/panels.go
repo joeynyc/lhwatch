@@ -46,6 +46,11 @@ func (m Model) diagnostics(w int) []string {
 // modalSize is the outer size of the panel that replaces the dashboard body.
 func (m Model) modalSize() (w, h int) { return m.width - 4, m.height - 10 }
 
+func (m Model) detailPageSize() int {
+	_, h := m.modalSize()
+	return max(1, h-3)
+}
+
 // maxScroll is the last offset that still shows a full page of the open panel,
 // so scrolling past the end never needs extra key presses to come back.
 func (m Model) maxScroll() int {

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -459,5 +460,59 @@ func TestPanelScrollIsClampedToContent(t *testing.T) {
 	m, _ = apply(m, tea.KeyPressMsg{Code: tea.KeyPgUp})
 	if m.scroll != 0 {
 		t.Fatalf("page up should stop at the top, got %d", m.scroll)
+	}
+}
+
+func TestDetailPagesAreAdjacentAtSmallHeights(t *testing.T) {
+	for _, size := range []struct{ width, height int }{{73, 21}, {80, 16}, {80, 17}, {80, 18}} {
+		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
+			m := ready(t, &fakeBackend{})
+			m.width, m.height = size.width, size.height
+			if size.width == 73 && size.height == 21 {
+				m, _ = apply(m, key("/"))
+				for _, r := range "5432" {
+					m, _ = apply(m, key(string(r)))
+				}
+				m, _ = apply(m, key("enter"))
+				m, _ = apply(m, key("enter"))
+				g, ok := m.current()
+				if !ok || g.service.Port != 5432 {
+					t.Fatalf("search did not open the 5432 service details: %+v", g)
+				}
+			} else {
+				m.detail = true
+			}
+			modalWidth, modalHeight := m.modalSize()
+			_, lines := m.modalLines(modalWidth - 4)
+			page := max(1, modalHeight-3)
+			limit := m.maxScroll()
+			if limit <= page || len(lines) <= page {
+				t.Fatalf("test details must span multiple pages: %d lines, page %d, limit %d", len(lines), page, limit)
+			}
+
+			m, _ = apply(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+			if m.scroll != page {
+				t.Fatalf("page down skipped detail lines at %dx%d: started at line %d, want line %d", size.width, size.height, m.scroll+1, page+1)
+			}
+			m, _ = apply(m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+			if m.scroll != 0 {
+				t.Fatalf("page up did not return to the adjacent page at %dx%d: got %d", size.width, size.height, m.scroll)
+			}
+			m, _ = apply(m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+			if m.scroll != 0 {
+				t.Fatalf("page up moved before the first detail line at %dx%d: got %d", size.width, size.height, m.scroll)
+			}
+
+			for range limit + page {
+				m, _ = apply(m, tea.KeyPressMsg{Code: tea.KeyPgDown})
+			}
+			if m.scroll != limit {
+				t.Fatalf("page down exceeded the final full-page offset at %dx%d: got %d, want %d", size.width, size.height, m.scroll, limit)
+			}
+			m, _ = apply(m, tea.KeyPressMsg{Code: tea.KeyPgUp})
+			if m.scroll != max(0, limit-page) {
+				t.Fatalf("page up from the bottom did not move one page at %dx%d: got %d, want %d", size.width, size.height, m.scroll, max(0, limit-page))
+			}
+		})
 	}
 }
