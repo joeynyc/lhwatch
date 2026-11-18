@@ -88,8 +88,9 @@ A host without `ssh` is the machine running the TUI; if you omit it, one named `
 | --- | --- |
 | `↑` / `↓`, `k` / `j` | Select a service, or scroll an open panel |
 | `Home` / `g`, `End` / `G` | Jump to the first or last service |
-| `PgUp` / `PgDn` | Page through an open panel |
+| `PgUp` / `PgDn` | Page through an open panel; detail pages move one visible page without skipping lines |
 | `/` | Search names, commands, hosts, ports, and directories |
+| Paste while searching | Add pasted text to the query |
 | `Backspace` / `Ctrl+U` while searching | Edit or clear the query |
 | `Enter` while searching | Keep the filter and return to navigation |
 | `Esc` | Cancel a dialog or clear the filter |
